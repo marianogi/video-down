@@ -1,0 +1,137 @@
+name: CI
+
+# Unit tests on every push. The install + end-to-end jobs install the real packages on clean
+# macOS and Windows runners; they run on demand (Actions → CI → Run workflow) because macOS
+# minutes are expensive.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: extension/pnpm-lock.yaml
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+      - name: Extension — install, type-check, unit tests, build
+        working-directory: extension
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run type-check
+          pnpm test
+          pnpm run build
+      - name: Native host — type-check and tests
+        working-directory: native-host
+        run: |
+          deno task check
+          deno task test
+
+  macos:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: extension/pnpm-lock.yaml
+      - name: Build the macOS package
+        run: |
+          (cd extension && pnpm install --frozen-lockfile)
+          node installer/build-release.mjs --skip-exe
+      - name: Unzip it like a user would, check permissions, install
+        run: |
+          cd "$RUNNER_TEMP"
+          unzip -q "$GITHUB_WORKSPACE"/release/video-down-*-macos.zip
+          ls -l video-down
+          test -x "video-down/Instalar video-down.command"
+          test -x video-down/install.sh
+          bash video-down/install.sh --no-launch
+      - name: Check what was installed
+        run: |
+          APP="$HOME/Library/Application Support/video-down"
+          ls -l "$APP" "$APP/bin"
+          cat "$APP/native-host-manifest.json"
+          ls "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts" "$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
+          "$APP/video-down-host.sh" --self-check
+          echo "$APP/bin" >> "$GITHUB_PATH"
+      - name: End-to-end tests (browser engine + native component on macOS)
+        working-directory: extension
+        env:
+          VD_E2E_NATIVE: "1"
+        run: |
+          node e2e/fixtures/make-fixtures.mjs
+          pnpm exec playwright install chromium
+          pnpm run test:e2e
+      - name: Uninstall
+        run: bash "$HOME/Library/Application Support/video-down/uninstall.sh"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: macos-test-results
+          path: |
+            extension/test-results
+            ~/Library/Application Support/video-down/logs
+
+  windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: extension/pnpm-lock.yaml
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          Push-Location extension; pnpm install --frozen-lockfile; Pop-Location
+          node installer/build-release.mjs
+      - name: Install silently with the .exe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release/video-down-setup-*.exe | Select-Object -First 1
+          Start-Process -Wait -FilePath $exe.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=install.log'
+          Get-Content install.log -Tail 5
+          $app = Join-Path $env:LOCALAPPDATA 'video-down'
+          Get-ChildItem $app, (Join-Path $app 'bin')
+          & cmd.exe /d /c "`"$app\video-down-host.cmd`" --self-check"
+          if ($LASTEXITCODE -ne 0) { throw 'self-check failed' }
+          Add-Content $env:GITHUB_PATH (Join-Path $app 'bin')
+      - name: End-to-end tests (browser engine + native component on Windows)
+        working-directory: extension
+        shell: pwsh
+        env:
+          VD_E2E_NATIVE: "1"
+        run: |
+          node e2e/fixtures/make-fixtures.mjs
+          pnpm exec playwright install chromium
+          pnpm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-test-results
+          path: extension/test-results
