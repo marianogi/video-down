@@ -48,8 +48,8 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 es.RunningScript=Descargando y verificando Deno, ffmpeg y yt-dlp…
 en.RunningScript=Downloading and verifying Deno, ffmpeg and yt-dlp…
-es.ScriptFailed=No se ha podido completar la instalación del componente nativo (código %1).%n%nRevisa la conexión a Internet y vuelve a ejecutar el instalador. El detalle está en la ventana de PowerShell.
-en.ScriptFailed=The native component could not be installed (code %1).%n%nCheck your Internet connection and run the installer again. Details are in the PowerShell window.
+es.ScriptFailed=No se ha podido completar la instalación del componente nativo (código %1).%n%nRevisa la conexión a Internet y vuelve a ejecutar el instalador. El detalle está en %LOCALAPPDATA%\video-down\logs\install.log.
+en.ScriptFailed=The native component could not be installed (code %1).%n%nCheck your Internet connection and run the installer again. Details are in %LOCALAPPDATA%\video-down\logs\install.log.
 es.OpenChrome=Abrir chrome://extensions para cargar la extensión
 en.OpenChrome=Open chrome://extensions to load the extension
 es.OpenFolder=Abrir la carpeta de la extensión
@@ -99,6 +99,9 @@ begin
   Result := FindChrome();
 end;
 
+var
+  ScriptFailed: Boolean;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
@@ -111,6 +114,19 @@ begin
               '" -AppDir "' + ExpandConstant('{app}') + '" -SourceDir "' + ExpandConstant('{app}') + '" -NoLaunch';
     if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params, '', SW_SHOW,
                 ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-      MsgBox(FmtMessage(CustomMessage('ScriptFailed'), [IntToStr(ResultCode)]), mbError, MB_OK);
+    begin
+      ScriptFailed := True;
+      // SuppressibleMsgBox honours /SUPPRESSMSGBOXES, so silent installs never hang on it.
+      SuppressibleMsgBox(FmtMessage(CustomMessage('ScriptFailed'), [IntToStr(ResultCode)]), mbError, MB_OK, IDOK);
+    end;
   end;
+end;
+
+// Non-zero exit code when the native component could not be installed (useful for silent installs).
+function GetCustomSetupExitCode(): Integer;
+begin
+  if ScriptFailed then
+    Result := 10
+  else
+    Result := 0;
 end;

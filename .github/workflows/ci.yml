@@ -32,6 +32,7 @@ jobs:
         working-directory: extension
         run: |
           pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
           pnpm run type-check
           pnpm test
           pnpm run build
@@ -125,6 +126,7 @@ jobs:
           Write-Host '--- install.ps1 log ---'; Get-Content (Join-Path $app 'logs\install.log') -ErrorAction SilentlyContinue
           Write-Host '--- processes ---'; Get-Process | Where-Object { $_.ProcessName -match 'powershell|deno|yt-dlp|setup|cmd' } | Format-Table Id, ProcessName, StartTime -AutoSize
           if (-not $finished) { throw 'installer did not finish in 10 minutes' }
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
           Get-ChildItem $app, (Join-Path $app 'bin')
           & cmd.exe /d /c "`"$app\video-down-host.cmd`" --self-check"
           if ($LASTEXITCODE -ne 0) { throw 'self-check failed' }

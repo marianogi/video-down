@@ -30,6 +30,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# When Windows PowerShell 5.1 is started from PowerShell 7 it can inherit PowerShell 7's module
+# path and lose built-in commands (seen on GitHub's Windows runners: Get-FileHash disappeared).
+# Restore the standard path; hashing and unzipping below use .NET directly anyway.
+if ($PSVersionTable.PSEdition -ne 'Core') {
+  $env:PSModulePath = (@(
+      (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'),
+      (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'),
+      (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules')
+    ) -join ';')
+}
 # La barra de progreso de Invoke-WebRequest hace las descargas diez veces más lentas en PowerShell 5.1.
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -50,8 +61,25 @@ function Get-Download([string]$Url, [string]$Destination) {
   Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -Headers @{ 'User-Agent' = 'video-down-installer' }
 }
 
+function Get-Sha256([string]$File) {
+  $stream = [System.IO.File]::OpenRead($File)
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $bytes = $sha.ComputeHash($stream)
+  } finally {
+    $stream.Dispose()
+  }
+  return ([System.BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+}
+
+function Expand-Zip([string]$Zip, [string]$Destination) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  if (Test-Path -LiteralPath $Destination) { Remove-Item -Recurse -Force -LiteralPath $Destination }
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($Zip, $Destination)
+}
+
 function Assert-Sha256([string]$File, [string]$Expected) {
-  $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant()
+  $actual = Get-Sha256 $File
   if ($actual -ne $Expected.ToLowerInvariant()) {
     throw "La huella SHA-256 de $(Split-Path -Leaf $File) no coincide.`n  esperada: $Expected`n  obtenida: $actual`nDescarga cancelada por seguridad."
   }
@@ -111,7 +139,7 @@ try {
     $zip = Join-Path $tmp 'deno.zip'
     Get-Download $v.deno.windows.url $zip
     Assert-Sha256 $zip $v.deno.windows.sha256
-    Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $tmp 'deno') -Force
+    Expand-Zip $zip (Join-Path $tmp 'deno')
     Copy-Item -Force -LiteralPath (Join-Path $tmp 'deno\deno.exe') -Destination (Join-Path $bin 'deno.exe')
     $installed | Add-Member -Force -NotePropertyName deno -NotePropertyValue $v.deno.version
   }
@@ -124,7 +152,7 @@ try {
     $zip = Join-Path $tmp 'ffmpeg.zip'
     Get-Download $v.ffmpeg.windows.url $zip
     Assert-Sha256 $zip $v.ffmpeg.windows.sha256
-    Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $tmp 'ffmpeg') -Force
+    Expand-Zip $zip (Join-Path $tmp 'ffmpeg')
     foreach ($exe in 'ffmpeg.exe', 'ffprobe.exe') {
       $found = Get-ChildItem -Recurse -LiteralPath (Join-Path $tmp 'ffmpeg') -Filter $exe | Select-Object -First 1
       if (-not $found) { throw "No se encontró $exe dentro del paquete de ffmpeg." }
