@@ -442,9 +442,16 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 | Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso, dos veces seguidas (la segunda no vuelve a descargar Deno ni ffmpeg) | Correcto |
 | Windows 11 | Componente nativo hablando como lo hace Chrome: `ping`, rechazo de una URL `file://`, consulta y descarga de YouTube (H.264 + AAC verificados con `ffprobe`), cancelación sin procesos ni temporales sueltos | Correcto |
 | Windows 11 | Las 12 pruebas de extremo a extremo, incluidas YouTube y el paso de un HLS grande a yt-dlp | 12 de 12 |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip descomprimido con `unzip`, permisos de ejecución conservados, `install.sh`, autocomprobación del componente nativo | Correcto |
-| macOS 14, GitHub Actions | Las 10 pruebas de extremo a extremo del motor del navegador | 10 de 10 |
-| Windows limpio, GitHub Actions | Instalación con el `.exe` y pruebas de extremo a extremo | Ver la pestaña *Actions* |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip descomprimido con `unzip`, permisos de ejecución conservados, `install.sh`, autocomprobación del componente nativo, desinstalación | Correcto |
+| macOS 14, GitHub Actions | Pruebas de extremo a extremo, incluido el paso de un HLS grande a yt-dlp con el componente nativo de Mac | 11 de 11 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` en modo silencioso, verificación SHA-256 de Deno, ffmpeg y yt-dlp, autocomprobación | Correcto |
+| Windows Server 2025, GitHub Actions | Pruebas de extremo a extremo, incluido el paso a yt-dlp | 11 de 11 (YouTube no se ejecuta en GitHub) |
+
+La verificación en máquinas limpias encontró y corrigió tres fallos que no se veían en el equipo de
+desarrollo: el instalador de Windows perdía `Get-FileHash` al lanzarse desde PowerShell 7, su aviso de
+error bloqueaba la instalación silenciosa, y ffmpeg.wasm podía recibir un trabajo antes de terminar de
+cargarse en equipos lentos (fallo heredado de Media Bridge). Se relanza desde la pestaña *Actions*
+del repositorio → CI → *Run workflow*.
 
 Pendiente de probar a mano en un Mac real: el doble clic en «Instalar video-down.command» con
 Gatekeeper, y cargar la extensión en Google Chrome para Mac.
