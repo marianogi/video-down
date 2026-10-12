@@ -10,28 +10,37 @@ import { readChunkRange } from "../core/database/chunks";
 import { logger } from "../core/utils/logger";
 
 let ffmpegInstance: FFmpeg | null = null;
+/**
+ * The pending load is shared. Media Bridge assigned the instance before load()
+ * finished, so a job arriving during the pre-warm got a half-loaded FFmpeg and
+ * failed with "ffmpeg is not loaded" (seen on slower machines).
+ */
+let ffmpegLoading: Promise<FFmpeg> | null = null;
 
 /**
- * Initialize FFmpeg instance
+ * Initialize FFmpeg instance (once; concurrent callers wait for the same load)
  */
-async function getFFmpeg(): Promise<FFmpeg> {
-  if (!ffmpegInstance) {
-    logger.info("Initializing FFmpeg in offscreen document");
-    ffmpegInstance = new FFmpeg();
-
-    await ffmpegInstance.load({
-      coreURL: chrome.runtime.getURL("./ffmpeg/core/ffmpeg-core.js"),
-      wasmURL: chrome.runtime.getURL("./ffmpeg/core/ffmpeg-core.wasm"),
+function getFFmpeg(): Promise<FFmpeg> {
+  if (!ffmpegLoading) {
+    ffmpegLoading = (async () => {
+      logger.info("Initializing FFmpeg in offscreen document");
+      const instance = new FFmpeg();
+      await instance.load({
+        coreURL: chrome.runtime.getURL("./ffmpeg/core/ffmpeg-core.js"),
+        wasmURL: chrome.runtime.getURL("./ffmpeg/core/ffmpeg-core.wasm"),
+      });
+      instance.on("log", ({ message }) => {
+        logger.debug("FFmpeg:", message);
+      });
+      ffmpegInstance = instance;
+      logger.info("FFmpeg initialized successfully");
+      return instance;
+    })().catch((err) => {
+      ffmpegLoading = null;
+      throw err;
     });
-
-    ffmpegInstance.on("log", ({ message }) => {
-      logger.debug("FFmpeg:", message);
-    });
-
-    logger.info("FFmpeg initialized successfully");
   }
-
-  return ffmpegInstance;
+  return ffmpegLoading;
 }
 
 /**
@@ -49,6 +58,7 @@ function resetFFmpeg(): void {
     ffmpegInstance = null;
     logger.info("FFmpeg instance reset after failure");
   }
+  ffmpegLoading = null;
 }
 
 /**

@@ -91,6 +91,27 @@ function updateKeepAlive(): void {
   keepAlive(browserJobs.size > 0);
 }
 
+/**
+ * Close the ffmpeg.wasm document a while after the last browser job ends. Closing it at
+ * once raced with a download starting right then, whose merge request was lost.
+ */
+let offscreenCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelOffscreenClose(): void {
+  if (offscreenCloseTimer) clearTimeout(offscreenCloseTimer);
+  offscreenCloseTimer = null;
+}
+
+function scheduleOffscreenClose(): void {
+  cancelOffscreenClose();
+  offscreenCloseTimer = setTimeout(() => {
+    offscreenCloseTimer = null;
+    if (browserJobs.size === 0) {
+      closeOffscreenDocument().catch((err) => logger.error("Failed to close offscreen document:", err));
+    }
+  }, 30_000);
+}
+
 // ------------------------------------------------------------------ progress routing
 
 function pushProgress(state: DownloadState, extra: Partial<ProgressPush> = {}): void {
@@ -287,6 +308,7 @@ async function startBrowserDownload(payload: DownloadRequestPayload, origin?: Or
 
   const id = generateDownloadId(payload.url);
   const abort = new AbortController();
+  cancelOffscreenClose();
   browserJobs.set(id, { abort, dedupeKey });
   activeDedupeKeys.add(dedupeKey);
   if (origin) jobOrigins.set(id, origin);
@@ -343,9 +365,7 @@ async function startBrowserDownload(payload: DownloadRequestPayload, origin?: Or
       activeDedupeKeys.delete(dedupeKey);
       updateKeepAlive();
       updateBadge();
-      if (browserJobs.size === 0) {
-        closeOffscreenDocument().catch((err) => logger.error("Failed to close offscreen document:", err));
-      }
+      if (browserJobs.size === 0) scheduleOffscreenClose();
     });
 
   return { success: true, downloadId: id, via: "browser" };
