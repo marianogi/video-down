@@ -13,6 +13,7 @@
     <header>
       <h1>video-down</h1>
       <p class="muted" data-i18n="extDescription"></p>
+      <p class="muted"><span data-i18n="optExtVersion"></span> <code id="ext-version"></code></p>
     </header>
 
     <section id="welcome" class="card" aria-labelledby="welcome-h">
@@ -42,6 +43,7 @@
         <button id="native-check" class="btn secondary" type="button" data-i18n="optCheckAgain"></button>
         <button id="native-update" class="btn secondary" type="button" data-i18n="optUpdateYtdlp" hidden></button>
       </div>
+      <p id="native-mismatch" class="notice" role="alert" hidden></p>
       <p id="native-message" class="muted" aria-live="polite"></p>
 
       <div id="install" class="install">

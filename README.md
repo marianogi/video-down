@@ -457,6 +457,20 @@ deno task test
 Para probar la extensión sin instalador: `chrome://extensions` → modo de desarrollador →
 «Cargar descomprimida» → carpeta `extension/dist`.
 
+### Versiones
+
+- **Un solo número.** La versión vive en `extension/package.json`. De ahí la toman el manifiesto de la
+  extensión, los instaladores (`installer/versions.json`) y el componente nativo, que la lee del paquete
+  instalado. El historial está en `CHANGELOG.md`.
+- **Subir el número:** `node installer/set-version.mjs <x.y.z>` lo cambia en todos los sitios y abre la
+  sección correspondiente en `CHANGELOG.md`.
+- **Nunca dos contenidos con el mismo número.** `installer/build-release.mjs` se niega a empaquetar si
+  hay cambios sin guardar, o si esa versión ya está publicada con otro código.
+- **Compilaciones de prueba reconocibles.** En `chrome://extensions` una compilación publicada muestra
+  su número (por ejemplo `0.1.3`); cualquier otra muestra `0.1.3-dev (<commit>)`.
+- **Comprobar qué está instalado.** El popup y las opciones muestran la versión de la extensión y la del
+  componente nativo, y avisan si no coinciden.
+
 ### Pruebas
 
 | Conjunto | Qué cubre | Cómo se ejecuta |

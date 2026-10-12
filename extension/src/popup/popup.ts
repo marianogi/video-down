@@ -92,10 +92,20 @@ async function load(): Promise<void> {
   render();
 }
 
+const extensionVersion = chrome.runtime.getManifest().version;
+(document.getElementById("version") as HTMLParagraphElement).textContent = t(
+  "versionLabel",
+  chrome.runtime.getManifest().version_name ?? extensionVersion,
+);
+
 async function loadNative(): Promise<void> {
   nativeChip.textContent = t("nativeChecking");
   const status = await sendMessage<NativeStatusReply>(MessageType.NATIVE_STATUS).catch(() => null);
-  if (status?.installed) {
+  if (status?.installed && status.pong && status.pong.hostVersion !== extensionVersion) {
+    nativeChip.className = "chip off";
+    nativeChip.textContent = t("nativeOutdated", status.pong.hostVersion);
+    nativeChip.title = t("optVersionMismatch", [extensionVersion, status.pong.hostVersion]);
+  } else if (status?.installed) {
     nativeChip.className = "chip on";
     nativeChip.textContent = t("nativeOn");
     nativeChip.title = `yt-dlp ${status.pong?.ytdlpVersion ?? ""}`;

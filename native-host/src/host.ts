@@ -33,7 +33,6 @@ import {
   summariseError,
 } from "./progress.ts";
 
-export const HOST_VERSION = "0.1.0";
 
 const IS_WINDOWS = Deno.build.os === "windows";
 const EXE = IS_WINDOWS ? ".exe" : "";
@@ -72,6 +71,22 @@ const YTDLP = join(BIN_DIR, `yt-dlp${EXE}`);
 const FFMPEG = join(BIN_DIR, `ffmpeg${EXE}`);
 const DENO = join(BIN_DIR, `deno${EXE}`);
 const TASKKILL = "C:\\Windows\\System32\\taskkill.exe";
+
+/**
+ * The version is never written by hand here: it is the package version the installer
+ * copied into <app dir>/versions.json (single source: extension/package.json).
+ */
+let cachedVersion: string | null = null;
+export function hostVersion(): string {
+  if (cachedVersion) return cachedVersion;
+  try {
+    const v = JSON.parse(Deno.readTextFileSync(join(APP_DIR, "versions.json")))?.videodown;
+    cachedVersion = typeof v === "string" && v ? v : "dev";
+  } catch {
+    cachedVersion = "dev";
+  }
+  return cachedVersion;
+}
 
 interface HostConfig {
   downloadDir: string;
@@ -289,7 +304,7 @@ async function handlePing(id: string): Promise<void> {
     id,
     type: "pong",
     protocol: PROTOCOL_VERSION,
-    hostVersion: HOST_VERSION,
+    hostVersion: hostVersion(),
     ytdlpVersion: await ytdlpVersion(),
     ffmpeg: exists(FFMPEG),
     deno: exists(DENO),
@@ -520,7 +535,7 @@ async function dispatch(req: HostRequest): Promise<void> {
 // ------------------------------------------------------------------ main loop
 
 async function main(): Promise<void> {
-  log("start", { version: HOST_VERSION, args: Deno.args.slice(0, 1) });
+  log("start", { version: hostVersion(), args: Deno.args.slice(0, 1) });
   const decoder = new FrameDecoder();
   const running: Promise<void>[] = [];
   const reader = Deno.stdin.readable.getReader();
@@ -570,7 +585,7 @@ async function selfCheck(): Promise<number> {
     // reported as empty
   }
   const status = {
-    hostVersion: HOST_VERSION,
+    hostVersion: hostVersion(),
     ytdlpVersion: await ytdlpVersion(),
     ffmpeg: exists(FFMPEG),
     deno: exists(DENO),

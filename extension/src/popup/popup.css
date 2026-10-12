@@ -8,6 +8,7 @@ body { width: 360px; max-height: 560px; }
   padding: 12px 14px 8px;
 }
 .top h1 { margin: 0; font-size: 16px; }
+.version { margin: 2px 0 0; font-size: 11.5px; }
 
 main { padding: 0 14px; }
 main h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); }

@@ -8,6 +8,7 @@
 // Usage: node scripts/build.mjs [--mode development|production] [--watch]
 
 import { build } from "vite";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,10 @@ const dist = resolve(root, process.argv.includes("--e2e") ? "dist-e2e" : "dist")
 const args = process.argv.slice(2);
 const mode = args.includes("--mode") ? args[args.indexOf("--mode") + 1] : "production";
 const watch = args.includes("--watch");
+// --release: build for a published package (only installer/build-release.mjs passes it).
+// Any other build is labelled "<version>-dev (<commit>)" in chrome://extensions, so a test
+// build can never be mistaken for a published version.
+const release = args.includes("--release");
 // --e2e: same build with an open shadow root so Playwright can reach the overlay.
 const e2e = args.includes("--e2e");
 const production = mode === "production";
@@ -102,6 +107,16 @@ for (const [entry, file] of [
 const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
 manifest.version = pkg.version;
+function commitLabel() {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" }).trim() !== "";
+    return `${sha}${dirty ? "+cambios" : ""}`;
+  } catch {
+    return "sin git";
+  }
+}
+manifest.version_name = release ? pkg.version : `${pkg.version}-dev (${commitLabel()})`;
 writeFileSync(resolve(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
 
 // ffmpeg.wasm core (ESM build, loaded by the offscreen document)
@@ -114,4 +129,4 @@ for (const f of ["ffmpeg-core.js", "ffmpeg-core.wasm"]) {
   cpSync(resolve(core, f), resolve(dist, "ffmpeg/core", f));
 }
 
-console.log(`video-down ${pkg.version} built (${mode}) → ${dist}`);
+console.log(`video-down ${manifest.version_name} built (${mode}) → ${dist}`);

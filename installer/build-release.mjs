@@ -22,6 +22,37 @@ if (versions.videodown !== version) {
   throw new Error(`installer/versions.json says ${versions.videodown} but extension/package.json says ${version}`);
 }
 
+// ------------------------------------------------------------------ version discipline
+// A package with a given number must always contain the same code. So:
+//  1. everything that goes into the package must be committed;
+//  2. if v<version> was already published, the shipped code must be identical to it.
+// To ship a change, raise the number first: node installer/set-version.mjs <x.y.z>
+const SHIPPED = ["extension", "native-host", "installer"];
+const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8" }).trim();
+if (git("status", "--porcelain", "--", ...SHIPPED) !== "") {
+  throw new Error("There are uncommitted changes in extension/, native-host/ or installer/. Commit them before building packages.");
+}
+try {
+  execFileSync("git", ["fetch", "--tags", "--quiet"], { cwd: repo, stdio: "ignore" });
+} catch {
+  console.warn("Could not fetch tags (offline?): checking local tags only.");
+}
+let published = "";
+try {
+  published = git("rev-parse", "-q", "--verify", `refs/tags/v${version}^{commit}`);
+} catch {
+  // not published yet
+}
+if (published) {
+  try {
+    execFileSync("git", ["diff", "--quiet", published, "HEAD", "--", ...SHIPPED], { cwd: repo });
+  } catch {
+    throw new Error(
+      `v${version} is already published with different code. Raise the version first: node installer/set-version.mjs <new version>`,
+    );
+  }
+}
+
 const BOM = "\uFEFF";
 const toCrlf = (s) => s.replace(/\r?\n/g, "\r\n");
 const toLf = (s) => s.replace(/\r\n/g, "\n");
@@ -48,7 +79,7 @@ function stageCommon(stage, lineEndings) {
 
 if (!args.includes("--skip-build")) {
   console.log("Building the extension…");
-  execFileSync(process.execPath, [join(repo, "extension/scripts/build.mjs"), "--mode", "production"], {
+  execFileSync(process.execPath, [join(repo, "extension/scripts/build.mjs"), "--mode", "production", "--release"], {
     cwd: join(repo, "extension"),
     stdio: "inherit",
   });

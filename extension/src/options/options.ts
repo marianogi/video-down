@@ -10,6 +10,9 @@ import type { StorageConfig } from "../core/types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+const extensionVersion = chrome.runtime.getManifest().version;
+$("ext-version").textContent = chrome.runtime.getManifest().version_name ?? extensionVersion;
+
 async function loadNative(force = false): Promise<void> {
   const chip = $<HTMLSpanElement>("native-chip");
   chip.className = "chip";
@@ -27,6 +30,9 @@ async function loadNative(force = false): Promise<void> {
     $("ffmpeg-state").textContent = status.pong.ffmpeg ? t("present") : t("missing");
     $("deno-state").textContent = status.pong.deno ? t("present") : t("missing");
     $("download-dir").textContent = status.pong.downloadDir || "—";
+    const mismatch = $("native-mismatch");
+    mismatch.hidden = status.pong.hostVersion === extensionVersion;
+    mismatch.textContent = t("optVersionMismatch", [extensionVersion, status.pong.hostVersion]);
   } else {
     chip.className = "chip off";
     chip.textContent = t("nativeOff");
