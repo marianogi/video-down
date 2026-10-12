@@ -33,7 +33,17 @@ if (git("status", "--porcelain", "--", ...SHIPPED) !== "") {
   throw new Error("There are uncommitted changes in extension/, native-host/ or installer/. Commit them before building packages.");
 }
 try {
-  execFileSync("git", ["fetch", "--tags", "--quiet"], { cwd: repo, stdio: "ignore" });
+  // Never wait for a passphrase or a host-key prompt: non-interactive and time-limited.
+  execFileSync("git", ["fetch", "--tags", "--quiet"], {
+    cwd: repo,
+    stdio: "ignore",
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND || "ssh -o BatchMode=yes -o ConnectTimeout=10",
+    },
+  });
 } catch {
   console.warn("Could not fetch tags (offline?): checking local tags only.");
 }
