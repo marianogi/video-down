@@ -37,6 +37,7 @@ import { createOffscreenDocument, closeOffscreenDocument } from "./core/ffmpeg/o
 import { KEEPALIVE_INTERVAL_MS, STORAGE_CONFIG_KEY } from "./shared/constants";
 import { variantsFor, type BrowserVariant } from "./core/variants";
 import { isSafeHttpUrl } from "@host/protocol";
+import { withPageHeaders } from "./core/downloader/header-rules";
 import {
   nativeStatus,
   nativeProbe,
@@ -179,9 +180,35 @@ function remember(tabId: number, frameId: number, url: string, formatHint?: Vide
   pendingByFrame.set(key, list.slice(-PENDING_LIMIT));
 }
 
+/**
+ * URLs the page itself requested recently, per tab. The page-world script that recognises
+ * playlists by their content runs where the page could tamper with it, so whatever it
+ * reports is only accepted if the page really requested that URL.
+ */
+const recentRequests = new Map<number, Map<string, number>>();
+const RECENT_LIMIT = 400;
+const RECENT_TTL_MS = 3 * 60_000;
+
+function logRequest(tabId: number, url: string): void {
+  let log = recentRequests.get(tabId);
+  if (!log) {
+    log = new Map();
+    recentRequests.set(tabId, log);
+  }
+  log.delete(url);
+  log.set(url, Date.now());
+  if (log.size > RECENT_LIMIT) log.delete(log.keys().next().value!);
+}
+
+function wasRequested(tabId: number, url: string): boolean {
+  const at = recentRequests.get(tabId)?.get(url);
+  return at !== undefined && Date.now() - at < RECENT_TTL_MS;
+}
+
 function onManifestHeaders(details: chrome.webRequest.OnHeadersReceivedDetails): void {
     if (details.tabId < 0 || details.statusCode >= 400) return;
     const url = details.url;
+    if (details.type !== "media") logRequest(details.tabId, url);
     if (url.includes(".googlevideo.com/")) return; // YouTube media goes through yt-dlp
 
     let format = detectFormatFromUrl(url);
@@ -230,6 +257,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 );
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  recentRequests.delete(tabId);
   for (const key of [...pendingByFrame.keys()]) {
     if (key.startsWith(`${tabId}:`)) pendingByFrame.delete(key);
   }
@@ -247,7 +275,10 @@ async function headSize(url: string): Promise<number | undefined> {
   }
 }
 
-async function handleGetVariants(payload: GetVariantsPayload & { sources?: string[] }): Promise<GetVariantsReply> {
+async function handleGetVariants(
+  payload: GetVariantsPayload & { sources?: string[]; pageUrl?: string },
+  frameUrl?: string,
+): Promise<GetVariantsReply> {
   if (!isSafeHttpUrl(payload.url)) return { success: false, error: "invalid url" };
   try {
     if (payload.format === VideoFormat.DIRECT) {
@@ -260,9 +291,12 @@ async function handleGetVariants(payload: GetVariantsPayload & { sources?: strin
       }));
       return { success: true, variants };
     }
-    const res = await fetch(payload.url, { signal: AbortSignal.timeout(15_000) });
+    const pageUrl = frameUrl ?? payload.pageUrl;
+    const { res, text } = await withPageHeaders(payload.url, pageUrl, async () => {
+      const r = await fetch(payload.url, { credentials: "include", signal: AbortSignal.timeout(15_000) });
+      return { res: r, text: r.ok ? await r.text() : "" };
+    });
     if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
-    const text = await res.text();
     const variants = variantsFor(payload.format, text, res.url || payload.url, payload.duration);
     return { success: true, variants };
   } catch (err) {
@@ -543,21 +577,27 @@ async function clearFinished(): Promise<{ success: boolean }> {
 
 // ------------------------------------------------------------------ CORS proxy for content scripts
 
-async function handleFetchResource(payload: {
-  input: string;
-  init: { method?: string; headers?: Record<string, string>; body?: number[]; mode?: RequestMode };
-}): Promise<[{ body: number[]; status: number; statusText: string; headers: Record<string, string> } | null, Error | null]> {
+async function handleFetchResource(
+  payload: {
+    input: string;
+    init: { method?: string; headers?: Record<string, string>; body?: number[]; mode?: RequestMode };
+  },
+  frameUrl?: string,
+): Promise<[{ body: number[]; status: number; statusText: string; headers: Record<string, string> } | null, Error | null]> {
   try {
     const { input, init } = payload;
     if (!isSafeHttpUrl(input)) throw new Error("invalid url");
     const method = (init.method || "GET").toUpperCase();
     if (method !== "GET" && method !== "HEAD") throw new Error("method not allowed");
-    const response = await fetch(input, {
-      method,
-      headers: init.headers || {},
-      signal: AbortSignal.timeout(20_000),
+    const { response, buffer } = await withPageHeaders(input, frameUrl, async () => {
+      const r = await fetch(input, {
+        method,
+        headers: init.headers || {},
+        credentials: "include",
+        signal: AbortSignal.timeout(20_000),
+      });
+      return { response: r, buffer: await r.arrayBuffer() };
     });
-    const buffer = await response.arrayBuffer();
     if (buffer.byteLength > 16 * 1024 * 1024) throw new Error("response too large");
     const headers: Record<string, string> = {};
     response.headers.forEach((value, key) => {
@@ -607,9 +647,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
     case MessageType.FETCH_RESOURCE:
-      return reply(handleFetchResource(message.payload));
+      return reply(handleFetchResource(message.payload, sender.tab ? sender.url : undefined));
     case MessageType.GET_VARIANTS:
-      return reply(handleGetVariants(message.payload));
+      return reply(handleGetVariants(message.payload, sender.tab ? sender.url : undefined));
+    case MessageType.VERIFY_SNIFFED_URL: {
+      const tabId = sender.tab?.id;
+      const url = String(message.payload?.url ?? "");
+      sendResponse({ ok: tabId !== undefined && isSafeHttpUrl(url) && wasRequested(tabId, url) });
+      return false;
+    }
     case MessageType.DOWNLOAD_REQUEST:
       return reply(startBrowserDownload(message.payload, originOf(sender)));
     case MessageType.NATIVE_STATUS:

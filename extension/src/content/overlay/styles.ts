@@ -84,7 +84,9 @@ export const OVERLAY_CSS = `
   width: 300px;
   max-width: calc(100vw - 16px);
   max-height: min(420px, calc(100vh - 16px));
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
   padding: 12px;
   border: 1px solid var(--vd-border);
   border-radius: 12px;

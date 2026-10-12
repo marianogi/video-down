@@ -80,8 +80,13 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 ### Caso 2. HLS (`.m3u8`)
 
 - **Cuándo.** El reproductor (hls.js, Video.js, JW Player, el reproductor nativo de Chrome…) pide un
-  `.m3u8`. La extensión lo ve en la red, aunque la URL no termine en `.m3u8`: también reconoce el tipo
-  de contenido `application/vnd.apple.mpegurl`.
+  manifiesto. La extensión lo reconoce de tres formas, por este orden:
+  1. por la URL, si termina en `.m3u8`;
+  2. por el tipo de contenido de la respuesta (`application/vnd.apple.mpegurl` y similares), aunque la URL
+     no diga nada;
+  3. por su contenido: si una respuesta de texto que pidió la página empieza por `#EXTM3U`, es una lista HLS
+     aunque se sirva como `text/plain` y sin extensión. Esto lo hace un script dentro de la página, y la
+     extensión solo acepta la URL que informa tras comprobar que la página la pidió de verdad.
 - **Resoluciones.** Se lee el *master playlist* y se ofrece una entrada por variante de vídeo.
   El tamaño se estima con el `BANDWIDTH` declarado y la duración del vídeo.
 - **Descarga.** Los segmentos (`.ts` o fMP4) se descargan en paralelo, con reintentos, y se guardan
@@ -91,8 +96,16 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
   que une los segmentos en un MP4 copiando los flujos, **sin recodificar**. Si el audio va en una pista
   aparte, se mezcla en el mismo paso.
 - **Guardado.** El MP4 se entrega a `chrome.downloads`.
-- **Cabeceras.** Si el CDN exige `Referer` u `Origin`, se añaden con una regla temporal de
-  `declarativeNetRequest` limitada a la ruta de esos segmentos, que se borra al terminar.
+- **Reproductores incrustados y CDN que comprueban quién pide.** Es muy habitual que el vídeo esté en un
+  `<iframe>` de otro sitio (plataformas de cursos, alojadores de vídeo) y que su CDN solo responda si la
+  petición lleva el `Origin` y el `Referer` de ese reproductor. La extensión hace lo mismo que el reproductor,
+  en cualquier web y sin listas de sitios:
+  - lee los manifiestos primero desde el propio marco del reproductor, con su origen;
+  - cuando lee o descarga desde el service worker, añade el `Origin` y el `Referer` del marco que reproduce
+    el vídeo mediante reglas temporales de `declarativeNetRequest`, y envía las cookies del sitio;
+  - esas reglas cubren todos los servidores que aparecen en las listas (manifiesto, variantes, segmentos y
+    claves, aunque estén en CDN distintos), solo afectan a peticiones de la propia extensión y se borran al
+    terminar.
 
 ### Caso 3. DASH (`.mpd`)
 
@@ -364,8 +377,13 @@ servidor propio. Es más trabajo de montar y queda como opción.
   No tiene `tabs`, `scripting`, `identity` ni recursos accesibles desde las webs.
 - **Interfaz aislada:** el icono y el menú viven en un Shadow DOM cerrado. La página no puede leerlos
   ni cambiarlos, y todo el texto que llega de la web se pinta como texto, nunca como HTML.
-- **Script de página mínimo:** solo vigila las APIs de EME, no toca claves ni licencias y no cambia su
-  comportamiento.
+- **Script de página mínimo:** vigila las APIs de EME sin tocar claves ni licencias, y mira solo el
+  comienzo de las respuestas de texto que pide la página para reconocer listas HLS o DASH. No cambia lo que
+  la página recibe. Como ese entorno pertenece a la página, la extensión no se fía de lo que informa:
+  solo usa una URL si el service worker vio que la página la pidió de verdad.
+- **Cabeceras prestadas con límites:** el `Origin` y el `Referer` del reproductor se añaden solo a
+  peticiones de la propia extensión, solo hacia los servidores que aparecen en las listas del vídeo, y
+  solo mientras dura la lectura o la descarga.
 - **Componente nativo encerrado:** Deno se ejecuta con `--allow-read` limitado a su carpeta,
   `--allow-write` limitado a sus carpetas `state`, `tmp` y `logs`, y `--allow-run` limitado a yt-dlp
   (y a `taskkill.exe` en Windows). Sin red, sin variables de entorno y sin módulos remotos.
@@ -426,7 +444,7 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 |---|---|---|
 | Unitarias de la extensión (Vitest, 26) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes | `pnpm test` |
 | Unitarias del componente nativo (Deno, 12) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging* | `deno task test` |
-| Extremo a extremo (Playwright, 10 + 2 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS con AES-128, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Extremo a extremo (Playwright, 13 + 2 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`) y paso de un HLS grande al componente nativo (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:

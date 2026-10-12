@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Embedded player, multi-host CDN</title>
+<style>body{margin:0;background:#000} video{width:640px;height:360px;display:block}</style>
+</head><body>
+<video controls muted></video>
+<script type="module">import { msePlayer } from "./player.js"; msePlayer("/protected/hls/cross-master.m3u8");</script>
+</body></html>

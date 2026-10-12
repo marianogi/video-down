@@ -19,7 +19,7 @@ import { DownloadProgressCallback } from "./types";
 import { MessageType } from "../../shared/messages";
 import { processWithFFmpeg } from "../ffmpeg/ffmpeg-bridge";
 import { saveBlobUrlToFile } from "../utils/blob-utils";
-import { addHeaderRules, removeHeaderRules } from "./header-rules";
+import { addHeaderRules, addHeaderRulesForUrls, removeHeaderRules } from "./header-rules";
 import {
   DEFAULT_MAX_CONCURRENT,
   DEFAULT_FFMPEG_TIMEOUT_MS,
@@ -227,23 +227,69 @@ export abstract class BasePlaylistHandler {
     }
   }
 
+  /** Page whose Origin/Referer the CDN expects, and the hosts already covered by a rule. */
+  private headerPageUrl: string | undefined;
+  private headerJobId = "";
+  private coveredHeaderFilters = new Set<string>();
+  private extraHeaderRuleIds: number[] = [];
+
   protected async tryAddHeaderRules(
     stateId: string,
     url: string,
     pageUrl?: string,
   ): Promise<number[]> {
+    this.headerPageUrl = pageUrl;
+    this.headerJobId = stateId;
+    this.coveredHeaderFilters = new Set();
+    this.extraHeaderRuleIds = [];
     if (!pageUrl) return [];
     try {
-      return await addHeaderRules(stateId, url, pageUrl);
+      const ids = await addHeaderRules(stateId, url, pageUrl);
+      this.coveredHeaderFilters.add(new URL(url).host);
+      return ids;
     } catch (err) {
       logger.warn("Failed to add DNR header rules:", err);
       return [];
     }
   }
 
+  /**
+   * Segments and keys may live on other hosts than the playlist (separate CDN, key server).
+   * Give each new host the same Origin/Referer before downloading from it.
+   */
+  protected async coverFragmentHosts(fragments: Fragment[]): Promise<void> {
+    await this.coverUrls(fragments.flatMap((f) => [f.uri, f.key?.uri ?? null]));
+  }
+
+  /** Same as coverFragmentHosts for any URL list (e.g. variant playlists on another host). */
+  protected async coverUrls(candidates: Array<string | null | undefined>): Promise<void> {
+    if (!this.headerPageUrl) return;
+    const urls: string[] = [];
+    for (const u of candidates) {
+      if (!u) continue;
+      try {
+        const host = new URL(u).host;
+        if (!this.coveredHeaderFilters.has(host)) {
+          this.coveredHeaderFilters.add(host);
+          urls.push(u);
+        }
+      } catch {
+        // relative or malformed: resolved elsewhere
+      }
+    }
+    if (urls.length === 0) return;
+    try {
+      const ids = await addHeaderRulesForUrls(`${this.headerJobId}_segments`, urls, this.headerPageUrl);
+      this.extraHeaderRuleIds.push(...ids);
+    } catch (err) {
+      logger.warn("Failed to add DNR header rules for segment hosts:", err);
+    }
+  }
+
   protected async tryRemoveHeaderRules(ruleIds: number[]): Promise<void> {
     try {
-      await removeHeaderRules(ruleIds);
+      await removeHeaderRules([...ruleIds, ...this.extraHeaderRuleIds]);
+      this.extraHeaderRuleIds = [];
     } catch (cleanupError) {
       logger.error("Failed to remove DNR header rules:", cleanupError);
     }
@@ -291,6 +337,7 @@ export abstract class BasePlaylistHandler {
     downloadId: string,
     stateId: string,
   ): Promise<void> {
+    await this.coverFragmentHosts(fragments);
     const totalFragments = fragments.length;
     let downloadedFragments = 0;
     let sessionBytesDownloaded = 0;

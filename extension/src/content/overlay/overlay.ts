@@ -93,6 +93,18 @@ function metaFor(parts: Array<string | undefined>): string {
   return parts.filter(Boolean).join(" · ");
 }
 
+/** Short, readable error: no raw URLs (they can be kilobytes of signed tokens). */
+function friendlyError(message: string | undefined): string {
+  if (!message) return "";
+  return message.replace(/https?:\/\/\S+/g, (u) => {
+    try {
+      return new URL(u).hostname;
+    } catch {
+      return "";
+    }
+  }).slice(0, 300);
+}
+
 function referrerForNative(): string | undefined {
   // Embedded players (Vimeo, etc.) often require the embedding page as Referer.
   if (window.self === window.top) return undefined;
@@ -616,7 +628,7 @@ export class Overlay {
       const canFallback = nativeAvailable || (await this.deps.isNativeAvailable().catch(() => false));
       if (token !== this.renderToken) return;
       this.renderError(
-        reply.error || t("noVariants"),
+        friendlyError(reply.error) || t("noVariants"),
         () => {
           this.cache.delete(`manifest:${media.url}`);
           void this.renderRoute(tr);
@@ -664,8 +676,17 @@ export class Overlay {
     const result = reply.result;
     if (!reply.success || !result) {
       if (reply.code === "drm") return this.renderDrm();
-      this.renderError(reply.error || t("nativeFailed"), () => {
-        this.cache.delete(`native:${url}`);
+      this.cache.delete(`native:${url}`);
+      if (reply.code === "unsupported-url") {
+        // yt-dlp does not know this page. The player may still request its playlist later
+        // (e.g. after pressing play), so "retry" searches the page again instead of re-asking yt-dlp.
+        this.renderError(t("nativeUnsupported"), () => {
+          this.lastRoute = null;
+          void this.renderRoute(tr);
+        });
+        return;
+      }
+      this.renderError(friendlyError(reply.error) || t("nativeFailed"), () => {
         void this.renderNative(tr, url, referer, ++this.renderToken);
       });
       return;

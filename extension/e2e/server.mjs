@@ -1,6 +1,15 @@
 // Tiny static server for the e2e pages and media (with Range support and correct MIME types).
+//
+// Special routes that reproduce real-world CDNs:
+//   /media/hls/playlist  HLS master without a .m3u8 extension (Content-Type detection)
+//   /protected/hls/...   HLS that answers 403 unless the Referer is the player's origin
+//                        (common with players embedded from another site)
+//   /odd/hls/...         HLS served as text/plain, master without extension (body sniffing)
+//   /protected/hls/cross-master.m3u8
+//                        master whose variants and segments live on ANOTHER host (localhost vs
+//                        127.0.0.1), all of them requiring the player's Referer
 import { createServer } from "node:http";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,19 +28,47 @@ const TYPES = {
 export function startServer(port = 0) {
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
+    const playerOrigin = `http://127.0.0.1:${server.address().port}`;
+    let pathname = url.pathname;
+    let type;
+
+    if (pathname.startsWith("/protected/")) {
+      const referer = req.headers.referer ?? "";
+      if (!referer.startsWith(`${playerOrigin}/`)) {
+        res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: bad referer");
+        return;
+      }
+      if (pathname === "/protected/hls/cross-master.m3u8") {
+        const other = `http://localhost:${server.address().port}/protected/hls/`;
+        const body = readFileSync(join(root, "fixtures/media/hls/master.m3u8"), "utf8").replace(
+          /^(v\d+\/index\.m3u8)$/gm,
+          (rel) => other + rel,
+        );
+        res.writeHead(200, { "Content-Type": TYPES[".m3u8"], "Access-Control-Allow-Origin": "*" }).end(body);
+        return;
+      }
+      pathname = pathname.replace("/protected/", "/media/");
+    } else if (pathname.startsWith("/odd/")) {
+      pathname = pathname.replace("/odd/", "/media/");
+      if (pathname === "/media/hls/master") pathname = "/media/hls/master.m3u8";
+      if (pathname.endsWith(".m3u8")) type = "text/plain; charset=utf-8";
+    }
+    if (pathname === "/media/hls/playlist") {
+      pathname = "/media/hls/master.m3u8";
+      type = TYPES[".m3u8"];
+    }
+
     // /media/... → fixtures/media, everything else → pages
-    let path = url.pathname.startsWith("/media/")
-      ? join(root, "fixtures", url.pathname)
-      : join(root, "pages", url.pathname === "/" ? "index.html" : url.pathname);
-    // "/playlist" serves the HLS master without a .m3u8 extension (same folder, so relative variant URIs still resolve) (Content-Type detection test)
-    if (url.pathname === "/media/hls/playlist") path = join(root, "fixtures/media/hls/master.m3u8");
+    let path = pathname.startsWith("/media/")
+      ? join(root, "fixtures", pathname)
+      : join(root, "pages", pathname === "/" ? "index.html" : pathname);
     path = normalize(path);
     if (!path.startsWith(root) || !existsSync(path) || statSync(path).isDirectory()) {
       res.writeHead(404).end("not found");
       return;
     }
     const size = statSync(path).size;
-    const type = TYPES[extname(path)] ?? (url.pathname === "/media/hls/playlist" ? TYPES[".m3u8"] : "application/octet-stream");
+    type ??= TYPES[extname(path)] ?? "application/octet-stream";
     const headers = { "Content-Type": type, "Accept-Ranges": "bytes", "Access-Control-Allow-Origin": "*" };
     const range = req.headers.range?.match(/bytes=(\d*)-(\d*)/);
     if (range) {

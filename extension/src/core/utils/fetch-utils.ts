@@ -39,16 +39,32 @@ export async function fetchResource(
     cache?: RequestCache;
   },
 ): Promise<Response> {
-  // If we're in a service worker/background context, use native fetch
+  // If we're in a service worker/background context, use native fetch.
+  // Cookies are included like the page's own player would (host permissions allow it);
+  // Origin/Referer are injected by the DNR rules the download handlers add.
   if (isServiceWorkerContext()) {
-    const response = await fetch(input, init);
+    const response = await fetch(input, { credentials: "include", ...init });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} ${response.statusText} for ${typeof input === "string" ? input : input.href}`);
     }
     return response;
   }
 
-  // In content script context, delegate to background script
+  // In a content script, first fetch from the page's own context: same Origin and Referer as
+  // the player, which CDNs that check them require (common with embedded players).
+  // If CORS or the server refuses it, fall back to the service worker, which can add them.
+  try {
+    const direct = await fetch(input, {
+      method: init?.method || "GET",
+      headers: init?.headers,
+      signal: init?.signal,
+      cache: init?.cache,
+    });
+    if (direct.ok) return direct;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") throw err;
+  }
+
   return new Promise((resolve, reject) => {
     // Convert input to string URL
     const url = typeof input === "string" ? input : input.href;

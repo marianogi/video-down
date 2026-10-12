@@ -16,6 +16,7 @@
   "retry": { "message": "Try again" },
   "tryNative": { "message": "Try with the native component" },
   "askingNative": { "message": "Asking yt-dlp for the resolutions…" },
+  "nativeUnsupported": { "message": "The video of this player was not found and yt-dlp does not recognise the page. Press play, wait a few seconds and press “Try again”." },
   "nativeFailed": { "message": "The native component could not read this video." },
   "viaNative": { "message": "It will be downloaded by the native component (yt-dlp)." },
   "viaBrowser": { "message": "browser" },

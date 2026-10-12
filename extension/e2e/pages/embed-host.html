@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Course page with embedded player</title>
+<style>body{margin:40px;font-family:sans-serif} iframe{width:680px;height:400px;border:0}</style>
+</head><body><h1>Course page with embedded player</h1>
+<!-- Served from http://localhost:PORT; the player lives on http://127.0.0.1:PORT (another origin), like any site embedding a third-party player -->
+<iframe id="player" allow="autoplay; fullscreen"></iframe>
+<script>
+  const player = new URLSearchParams(location.search).get("player") || "player-protected.html";
+  document.getElementById("player").src = `http://127.0.0.1:${location.port}/${player}`;
+</script>
+</body></html>

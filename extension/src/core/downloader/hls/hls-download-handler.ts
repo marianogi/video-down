@@ -111,6 +111,7 @@ export class HlsDownloadHandler extends BasePlaylistHandler {
           }, audio: ${audioPlaylistUrl || "none"}`,
         );
 
+        await this.coverUrls([videoPlaylistUrl, audioPlaylistUrl]);
         if (videoPlaylistUrl) {
           videoPlaylistText = await this.fetchTextCancellable(videoPlaylistUrl);
           canDownloadHLSManifest(videoPlaylistText);
@@ -145,6 +146,7 @@ export class HlsDownloadHandler extends BasePlaylistHandler {
       }
 
       throwIfAborted(this.abortSignal);
+      await this.coverUrls([videoPlaylistUrl, audioPlaylistUrl]);
 
       const downloadJobs: Promise<void>[] = [];
 

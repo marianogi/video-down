@@ -16,6 +16,7 @@
   "retry": { "message": "Reintentar" },
   "tryNative": { "message": "Probar con el componente nativo" },
   "askingNative": { "message": "Consultando las resoluciones con yt-dlp…" },
+  "nativeUnsupported": { "message": "No se ha encontrado el vídeo de este reproductor y yt-dlp no reconoce la página. Dale al play, espera unos segundos y pulsa «Reintentar»." },
   "nativeFailed": { "message": "El componente nativo no ha podido leer este vídeo." },
   "viaNative": { "message": "Se descargará con el componente nativo (yt-dlp)." },
   "viaBrowser": { "message": "navegador" },

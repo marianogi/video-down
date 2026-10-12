@@ -5,7 +5,7 @@
  * Run with: pnpm run test:e2e   (builds dist-e2e and the media fixtures first)
  */
 
-import { test as base, expect, chromium, type BrowserContext, type Page } from "@playwright/test";
+import { test as base, expect, chromium, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -102,10 +102,16 @@ function probe(file: string): { width?: number; height?: number; video?: string;
   }
 }
 
-async function downloadAndCheck(page: Page, downloads: string, option: RegExp, expected: { height: number }) {
+async function downloadAndCheck(
+  target: Page | Locator,
+  downloads: string,
+  option: RegExp,
+  expected: { height: number },
+) {
   const since = Date.now() - 1000;
-  await menu(page).getByRole("button", { name: option }).click();
-  await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 90_000 });
+  const m = "goto" in target ? menu(target) : target;
+  await m.getByRole("button", { name: option }).click();
+  await expect(m.getByText("Download finished")).toBeVisible({ timeout: 90_000 });
   await expect.poll(() => newestFile(downloads, since), { timeout: 15_000 }).not.toBeNull();
   const file = newestFile(downloads, since)!;
   const info = probe(file);
@@ -150,6 +156,32 @@ test("2c · HLS with AES-128 (not DRM) is decrypted and saved", async ({ page, b
   await downloadAndCheck(page, downloads, /Original file/, { height: 360 });
 });
 
+test("2d · HLS served as text/plain without extension is recognised by its content", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/odd-type.html`);
+  await trigger(page).click();
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+});
+
+test("2e · player in a cross-origin iframe whose CDN demands the player's Referer", async ({ page, baseUrl, downloads }) => {
+  // Top page on localhost, player iframe on 127.0.0.1: two origins, as with any site embedding a
+  // third-party player (course platforms, video hosts…) whose CDN checks the Referer.
+  await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html`);
+  const overlay = page.frameLocator("#player").locator("video-down-overlay");
+  await overlay.getByRole("button", { name: /Download this video/ }).click();
+  const m = overlay.getByRole("dialog");
+  await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  await downloadAndCheck(m, downloads, /360p/, { height: 360 });
+});
+
+test("2f · same, with variants and segments on another host that also checks the Referer", async ({ page, baseUrl, downloads }) => {
+  await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html?player=player-cross.html`);
+  const overlay = page.frameLocator("#player").locator("video-down-overlay");
+  await overlay.getByRole("button", { name: /Download this video/ }).click();
+  const m = overlay.getByRole("dialog");
+  await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  await downloadAndCheck(m, downloads, /720p/, { height: 720 });
+});
+
 test("3 · DASH: video representations listed, audio merged", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/dash.html`);
   await trigger(page).click();
@@ -182,7 +214,7 @@ test("5 · blob video with no manifest: no browser download is offered", async (
   // Either the native component is missing (explanation) or it is installed and yt-dlp
   // cannot read a local test page (error). In both cases no browser resolution is offered.
   await expect(
-    menu(page).getByText(/native component is needed|could not read|Unsupported URL|ERROR|failed/i).first(),
+    menu(page).getByText(/native component is needed|was not found|could not read|ERROR|failed/i).first(),
   ).toBeVisible({ timeout: 30_000 });
 });
 

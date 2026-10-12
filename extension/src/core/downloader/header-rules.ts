@@ -1,116 +1,87 @@
 /**
- * Declarative Net Request header injection for HLS segment downloads.
+ * Declarative Net Request header injection for requests made by the extension.
  *
- * Browsers silently strip `Origin` and `Referer` from `fetch()` calls (they
- * are "forbidden headers"). To ensure CDNs that require these headers still
- * receive them, we add dynamic DNR rules that inject the headers at the
- * network layer for requests matching a specific URL prefix.
+ * Browsers silently strip `Origin` and `Referer` from `fetch()` calls (they are
+ * "forbidden headers"), and requests from the extension carry none at all. Many
+ * CDNs refuse playlists, keys or segments without the Origin/Referer of the page
+ * that plays the video (typical of players embedded from another site). So while
+ * the extension downloads, temporary DNR rules set those headers.
+ *
+ * Scope of every rule:
+ *  - only requests initiated by this extension (initiatorDomains = extension id),
+ *  - only XMLHttpRequest/fetch,
+ *  - only the hosts the playlists actually point to (one rule per host, any path),
+ *  - removed as soon as the fetch or the download ends.
+ *
+ * Generic for any site: the headers always come from the URL of the frame that
+ * plays the video, never from a list of known sites.
+ *
+ * Forked from Media Bridge (MIT): rules are now per host instead of per folder,
+ * keep the port, and cover every host referenced by the segments and keys.
  */
 
 import { logger } from "../utils/logger";
 
-/**
- * Derive two deterministic rule IDs from a download ID string.
- * We hash the string into a 31-bit positive integer range and use two
- * consecutive IDs (one for Origin, one for Referer).
- */
-function ruleIdsFromDownloadId(downloadId: string): [number, number] {
+/** Deterministic positive 31-bit rule id for a (job, host) pair. */
+function ruleIdFor(key: string): number {
   let hash = 0;
-  for (let i = 0; i < downloadId.length; i++) {
-    hash = (hash * 31 + downloadId.charCodeAt(i)) | 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
   }
-  // Keep in positive 30-bit range so both IDs stay positive 31-bit ints
-  const base = (hash & 0x3fffffff) + 1;
-  return [base, base + 1];
+  return (hash & 0x3fffffff) + 1;
+}
+
+/** `||host[:port]/` matches every path on that host (the port matters for non-default ports). */
+function hostFilter(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return `||${u.host}/`;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Build a `urlFilter` that matches all segment requests under the same
- * directory as `cdnUrl`. For example, given
- *   https://cdn.example.com/hls/videos/.../720P_4000K.mp4/seg-1-v1-a1.ts
- * the filter becomes
- *   ||cdn.example.com/hls/videos/.../720P_4000K.mp4/
- * which matches every segment under that path.
- */
-function buildUrlFilter(cdnUrl: string): string {
-  const url = new URL(cdnUrl);
-  const lastSlash = url.pathname.lastIndexOf("/");
-  const pathPrefix = lastSlash > 0 ? url.pathname.substring(0, lastSlash + 1) : url.pathname;
-  return `||${url.hostname}${pathPrefix}`;
-}
-
-/**
- * Add Origin + Referer header-injection rules scoped to a specific CDN path.
+ * Add Origin + Referer rules for every distinct host among `urls`.
  *
- * @param downloadId  Unique download identifier (used to derive rule IDs)
- * @param cdnUrl      A representative segment/playlist URL on the CDN
- * @param pageUrl     The page URL whose origin should be used for the headers
- * @returns The two rule IDs that were added (pass to `removeHeaderRules`)
+ * @param jobId    Download or fetch identifier (used to derive rule ids)
+ * @param urls     URLs whose hosts need the headers (playlist, segments, keys…)
+ * @param pageUrl  URL of the frame playing the video; its origin is used for the headers
+ * @returns The rule ids added (pass them to `removeHeaderRules`)
  */
-export async function addHeaderRules(
-  downloadId: string,
-  cdnUrl: string,
-  pageUrl: string,
-): Promise<number[]> {
-  const [originRuleId, refererRuleId] = ruleIdsFromDownloadId(downloadId);
+export async function addHeaderRulesForUrls(jobId: string, urls: string[], pageUrl: string): Promise<number[]> {
   const origin = new URL(pageUrl).origin;
-  const urlFilter = buildUrlFilter(cdnUrl);
+  const filters = [...new Set(urls.map(hostFilter).filter((f): f is string => !!f))];
+  if (filters.length === 0) return [];
 
-  const rules: chrome.declarativeNetRequest.Rule[] = [
-    {
-      id: originRuleId,
-      priority: 1,
-      action: {
-        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
-        requestHeaders: [
-          {
-            header: "Origin",
-            operation: chrome.declarativeNetRequest.HeaderOperation.SET,
-            value: origin,
-          },
-        ],
-      },
-      condition: {
-        urlFilter,
-        initiatorDomains: [chrome.runtime.id],
-        resourceTypes: [
-          chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-        ],
-      },
+  const rules: chrome.declarativeNetRequest.Rule[] = filters.map((urlFilter) => ({
+    id: ruleIdFor(`${jobId}|${urlFilter}`),
+    priority: 1,
+    action: {
+      type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+      requestHeaders: [
+        { header: "Origin", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: origin },
+        // What a browser sends on a cross-origin request with the default referrer policy.
+        { header: "Referer", operation: chrome.declarativeNetRequest.HeaderOperation.SET, value: `${origin}/` },
+      ],
     },
-    {
-      id: refererRuleId,
-      priority: 1,
-      action: {
-        type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
-        requestHeaders: [
-          {
-            header: "Referer",
-            operation: chrome.declarativeNetRequest.HeaderOperation.SET,
-            value: origin + "/",
-          },
-        ],
-      },
-      condition: {
-        urlFilter,
-        initiatorDomains: [chrome.runtime.id],
-        resourceTypes: [
-          chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST,
-        ],
-      },
+    condition: {
+      urlFilter,
+      initiatorDomains: [chrome.runtime.id],
+      resourceTypes: [chrome.declarativeNetRequest.ResourceType.XMLHTTPREQUEST],
     },
-  ];
+  }));
 
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [originRuleId, refererRuleId],
-    addRules: rules,
-  });
+  const ids = rules.map((r) => r.id);
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids, addRules: rules });
+  logger.info(`[DNR] Added header rules ${ids.join(",")} for ${filters.join(" ")}`);
+  return ids;
+}
 
-  logger.info(
-    `[DNR] Added header rules ${originRuleId},${refererRuleId} for ${urlFilter}`,
-  );
-
-  return [originRuleId, refererRuleId];
+/** Single-URL form kept for the existing callers. */
+export async function addHeaderRules(jobId: string, cdnUrl: string, pageUrl: string): Promise<number[]> {
+  return addHeaderRulesForUrls(jobId, [cdnUrl], pageUrl);
 }
 
 /**
@@ -118,10 +89,27 @@ export async function addHeaderRules(
  */
 export async function removeHeaderRules(ruleIds: number[]): Promise<void> {
   if (ruleIds.length === 0) return;
-
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: ruleIds,
-  });
-
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ruleIds });
   logger.info(`[DNR] Removed header rules ${ruleIds.join(",")}`);
+}
+
+let transientCounter = 0;
+
+/**
+ * Run `fn` (a fetch from the service worker) while requests to `url`'s host carry
+ * the Origin/Referer of the page that plays the video.
+ */
+export async function withPageHeaders<T>(url: string, pageUrl: string | undefined, fn: () => Promise<T>): Promise<T> {
+  if (!pageUrl || !/^https?:\/\//i.test(pageUrl) || !/^https?:\/\//i.test(url)) return fn();
+  let ruleIds: number[] = [];
+  try {
+    ruleIds = await addHeaderRules(`fetch_${Date.now()}_${transientCounter++}`, url, pageUrl);
+  } catch (err) {
+    logger.warn("[DNR] could not add page headers:", err);
+  }
+  try {
+    return await fn();
+  } finally {
+    if (ruleIds.length) await removeHeaderRules(ruleIds).catch(() => undefined);
+  }
 }

@@ -67,6 +67,25 @@ async function main(): Promise<void> {
     for (const item of pending) detection.handleNetworkRequest(item.url, item.formatHint);
   }
 
+  // Playlists recognised by their content in the page's world (see content/main-world.ts).
+  // That world belongs to the page, so a URL is only used if the service worker confirms
+  // the page really requested it.
+  document.addEventListener("video-down:manifest", (event) => {
+    let info: { url?: unknown; kind?: unknown };
+    try {
+      info = JSON.parse(String((event as CustomEvent).detail));
+    } catch {
+      return;
+    }
+    const url = typeof info.url === "string" ? info.url : "";
+    const hint = info.kind === "hls" ? VideoFormat.HLS : info.kind === "dash" ? VideoFormat.DASH : undefined;
+    if (!url || !hint) return;
+    chrome.runtime.sendMessage({ type: MessageType.VERIFY_SNIFFED_URL, payload: { url } }, (r: { ok?: boolean }) => {
+      if (chrome.runtime.lastError || !r?.ok) return;
+      detection?.handleNetworkRequest(url, hint);
+    });
+  });
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === MessageType.NETWORK_URL_DETECTED) {
       const { url, formatHint } = message.payload ?? {};
