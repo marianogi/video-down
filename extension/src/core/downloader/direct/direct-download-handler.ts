@@ -271,11 +271,15 @@ export class DirectDownloadHandler {
     return new Promise<DirectDownloadResult>((resolve, reject) => {
       // Store promise resolvers and instance reference for onChanged callback
       // Chrome's onChanged event will fire when download completes or fails
-      DirectDownloadHandler.downloadProgressListeners.set(chromeDownloadId, {
-        resolve,
-        reject,
-        stateId,
-        handler: this,
+      const listener: DownloadListener = { resolve, reject, stateId, handler: this };
+      DirectDownloadHandler.downloadProgressListeners.set(chromeDownloadId, listener);
+      // A small or local file can finish while the state was being stored, before this
+      // listener existed; its "complete" event is then already gone. Check the real state
+      // once now (Media Bridge waited forever in that case).
+      void this.getDownloadItem(chromeDownloadId).then((item) => {
+        if (!item || DirectDownloadHandler.downloadProgressListeners.get(chromeDownloadId) !== listener) return;
+        if (item.state === "complete") this.handleDownloadCompletion(chromeDownloadId, item, listener);
+        else if (item.state === "interrupted") this.handleDownloadFailure(chromeDownloadId, item, listener);
       });
     });
   }

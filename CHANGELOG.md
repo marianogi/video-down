@@ -24,6 +24,10 @@ contrastando con el estándar HLS, RFC 8216):
   instalado, la misma descarga continúa con yt-dlp y el ffmpeg nativo.
 - El menú avisa si otras listas de la página (por ejemplo una *master* con más calidades) no se pudieron
   leer, con el motivo.
+- **Descargas que se quedaban en 0 %**: si un fichero pequeño o el MP4 final terminaba antes de que la
+  extensión empezara a escuchar el aviso de «terminado», la descarga esperaba para siempre (o hasta 5
+  minutos). Ahora se escucha antes y se comprueba el estado real. El plazo de guardado pasa a 30 minutos
+  para dar tiempo al diálogo «Guardar como».
 - Menos registro en la consola de las páginas.
 - Pruebas nuevas: los tres casos de HLS anteriores, el respaldo automático y una comparación automática
   de calidades con yt-dlp (coinciden en HLS y DASH).

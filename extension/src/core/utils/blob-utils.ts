@@ -26,8 +26,8 @@ export function revokeBlobUrl(blobUrl: string): void {
  * Save a blob URL to a file via the Chrome downloads API.
  * Stores the chromeDownloadId in the download state for reliable cancellation.
  */
-/** Maximum time to poll for download completion (5 minutes) */
-const MAX_POLL_DURATION_MS = 5 * 60 * 1000;
+/** Maximum time to wait for the save to finish (includes a possible "Save as" dialog) */
+const MAX_POLL_DURATION_MS = 30 * 60 * 1000;
 
 export async function saveBlobUrlToFile(
   blobUrl: string,
@@ -43,7 +43,7 @@ export async function saveBlobUrlToFile(
           filename,
           saveAs,
         },
-        async (downloadId) => {
+        (downloadId) => {
           if (chrome.runtime.lastError) {
             logger.error(
               `Chrome downloads API error: ${chrome.runtime.lastError.message}`,
@@ -57,43 +57,57 @@ export async function saveBlobUrlToFile(
             return;
           }
 
-          // Store chromeDownloadId in download state immediately
-          const currentState = await getDownload(stateId);
-          if (currentState) {
-            currentState.chromeDownloadId = downloadId;
-            await storeDownload(currentState);
-          }
-
-          // Wait for download to complete via onChanged event (no polling)
-          const timeoutId = setTimeout(() => {
+          let settled = false;
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          const settle = (state: "complete" | "interrupted", error?: string) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
             chrome.downloads.onChanged.removeListener(onChange);
-            reject(new Error("Download timed out after 5 minutes"));
-          }, MAX_POLL_DURATION_MS);
+            revokeBlobUrl(blobUrl);
+            if (state === "interrupted") {
+              reject(new Error(error || "Download interrupted"));
+              return;
+            }
+            chrome.downloads.search({ id: downloadId }, (results) => {
+              resolve(results?.[0]?.filename || filename);
+            });
+          };
 
+          // Listen first: a blob is saved almost instantly, and Media Bridge attached this
+          // listener only after two database round-trips, so "complete" could be missed and
+          // the download hung until the timeout.
           function onChange(delta: chrome.downloads.DownloadDelta) {
             if (delta.id !== downloadId || !delta.state) return;
-
-            if (delta.state.current === "complete") {
-              clearTimeout(timeoutId);
-              chrome.downloads.onChanged.removeListener(onChange);
-
-              const finish = async () => {
-                revokeBlobUrl(blobUrl);
-                chrome.downloads.search({ id: downloadId }, (results) => {
-                  const item = results?.[0];
-                  resolve(item?.filename || filename);
-                });
-              };
-              finish();
-            } else if (delta.state.current === "interrupted") {
-              clearTimeout(timeoutId);
-              chrome.downloads.onChanged.removeListener(onChange);
-              revokeBlobUrl(blobUrl);
-              reject(new Error((delta as any).error?.current || "Download interrupted"));
+            if (delta.state.current === "complete") settle("complete");
+            else if (delta.state.current === "interrupted") {
+              settle("interrupted", (delta as { error?: { current?: string } }).error?.current);
             }
           }
-
           chrome.downloads.onChanged.addListener(onChange);
+
+          // Generous: with "Ask where to save" the user may take a while in the dialog.
+          timeoutId = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            chrome.downloads.onChanged.removeListener(onChange);
+            reject(new Error("Download timed out"));
+          }, MAX_POLL_DURATION_MS);
+
+          void (async () => {
+            // Store chromeDownloadId in download state for reliable cancellation
+            const currentState = await getDownload(stateId);
+            if (currentState) {
+              currentState.chromeDownloadId = downloadId;
+              await storeDownload(currentState);
+            }
+            // In case it finished before the listener above was attached.
+            chrome.downloads.search({ id: downloadId }, (results) => {
+              const item = results?.[0];
+              if (item?.state === "complete") settle("complete");
+              else if (item?.state === "interrupted") settle("interrupted", item.error);
+            });
+          })();
         },
       );
     });
