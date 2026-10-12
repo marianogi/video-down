@@ -191,7 +191,7 @@ export class HlsDetectionHandler {
     // It's a standalone media playlist, add it as M3U8 format
     // A media playlist without #EXT-X-ENDLIST is a live stream
     const isLive = !playlistText.includes("#EXT-X-ENDLIST");
-    logger.info("[video-down] Detected standalone M3U8 media playlist", url);
+    logger.debug(`[video-down] HLS media playlist: ${redactUrl(url)}`);
     return await this.addDetectedVideo(url, VideoFormat.M3U8, playlistText, isLive);
   }
 
@@ -204,7 +204,7 @@ export class HlsDetectionHandler {
     normalizedUrl: string,
     playlistText: string,
   ): Promise<VideoMetadata | null> {
-    logger.info("[video-down] Detected HLS Master Playlist", { url });
+    logger.debug(`[video-down] HLS master playlist: ${redactUrl(url)}`);
 
     // Parse once, reuse for tracking and liveness check
     const levels = parseMasterPlaylist(playlistText, url);

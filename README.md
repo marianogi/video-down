@@ -92,11 +92,16 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
   El tamaño se estima con el `BANDWIDTH` declarado y la duración del vídeo.
 - **Descarga.** Los segmentos (`.ts` o fMP4) se descargan en paralelo, con reintentos, y se guardan
   en IndexedDB. Si van cifrados con **AES-128** (clave pública publicada en el propio manifiesto, que no es
-  DRM), se descifran con WebCrypto.
+  DRM), se descifran con WebCrypto, siguiendo el estándar: si la lista no declara vector de inicialización,
+  se usa el número de secuencia de cada segmento. La clave se pide una sola vez.
+- **Vídeo en un único fichero.** Si la lista usa rangos de bytes (`EXT-X-BYTERANGE`), cada segmento se
+  pide como un trozo del fichero con una petición `Range`.
 - **Montaje.** En un documento oculto de la extensión (*offscreen document*) se carga **ffmpeg.wasm**,
   que une los segmentos en un MP4 copiando los flujos, **sin recodificar**. Si el audio va en una pista
   aparte, se mezcla en el mismo paso.
 - **Guardado.** El MP4 se entrega a `chrome.downloads`.
+- **Respaldo automático.** Si algo falla en el navegador y el componente nativo está instalado, la misma
+  descarga continúa sola con yt-dlp y el ffmpeg nativo; el menú lo indica.
 - **Reproductores incrustados y CDN que comprueban quién pide.** Es muy habitual que el vídeo esté en un
   `<iframe>` de otro sitio (plataformas de cursos, alojadores de vídeo) y que su CDN solo responda si la
   petición lleva el `Origin` y el `Referer` de ese reproductor. La extensión hace lo mismo que el reproductor,
@@ -475,10 +480,10 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 29) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura | `pnpm test` |
+| Unitarias de la extensión (Vitest, 33) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128 y rangos de bytes | `pnpm test` |
 | Unitarias del componente nativo (Deno, 12) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging* | `deno task test` |
-| Extremo a extremo (Playwright, 15 + 2 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (diagnóstico HTTP 403), lista cifrada en formato propio (diagnóstico sin descarga), DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
-| Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`) y paso de un HLS grande al componente nativo (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
+| Extremo a extremo (Playwright, 18 + 4 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (diagnóstico HTTP 403), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador y **comparación de calidades con yt-dlp** como segunda opinión (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:
 la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo. La que se distribuye es cerrada.

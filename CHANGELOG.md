@@ -7,6 +7,27 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.1.5 (2026-10-12)
+
+Correcciones generales del motor del navegador (todas heredadas de Media Bridge, encontradas
+contrastando con el estándar HLS, RFC 8216):
+
+- **AES-128 sin vector de inicialización** (muy común en CDN): el vector es el número de secuencia del
+  segmento. Antes se guardaba el segmento aún cifrado y ffmpeg fallaba con «FS error».
+- **AES-128 con vector explícito**: cada bloque de 32 bits se escribía con 2 cifras en vez de 8, y el
+  vector salía mal si empezaba por ceros.
+- **Rangos de bytes** (`EXT-X-BYTERANGE`, vídeo en un único fichero): antes se descargaba el fichero entero
+  por cada segmento.
+- La clave de cifrado se pide una vez por descarga, no una por segmento, y se valida (16 bytes).
+- ffmpeg.wasm: se comprueba su código de salida y el error cuenta el motivo real.
+- **Respaldo automático**: si una descarga HLS/DASH falla en el navegador y el componente nativo está
+  instalado, la misma descarga continúa con yt-dlp y el ffmpeg nativo.
+- El menú avisa si otras listas de la página (por ejemplo una *master* con más calidades) no se pudieron
+  leer, con el motivo.
+- Menos registro en la consola de las páginas.
+- Pruebas nuevas: los tres casos de HLS anteriores, el respaldo automático y una comparación automática
+  de calidades con yt-dlp (coinciden en HLS y DASH).
+
 ## 0.1.4 (2026-10-12)
 
 - La comprobación del componente nativo espera hasta 20 s (el primer arranque de Deno puede ser

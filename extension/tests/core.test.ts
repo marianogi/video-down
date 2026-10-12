@@ -254,3 +254,57 @@ describe("detection failures", () => {
     expect(statusFromError(new Error("Failed to fetch"))).toBeUndefined();
   });
 });
+
+// ------------------------------------------------------------------ HLS segments (RFC 8216)
+
+import { parseMediaPlaylist, ivFromSequence, ivToHex } from "../src/core/parsers/m3u8-parser";
+import { parseLevelsPlaylist } from "../src/core/parsers/playlist-utils";
+
+describe("HLS media playlist parsing", () => {
+  const playlist = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:4",
+    "#EXT-X-MEDIA-SEQUENCE:7",
+    "#EXT-X-TARGETDURATION:4",
+    '#EXT-X-KEY:METHOD=AES-128,URI="https://keys.example.com/k"',
+    "#EXTINF:4,",
+    "#EXT-X-BYTERANGE:1000@720",
+    "all.ts",
+    "#EXTINF:4,",
+    "#EXT-X-BYTERANGE:2000",
+    "all.ts",
+    '#EXT-X-KEY:METHOD=AES-128,URI="https://keys.example.com/k",IV=0x0000000a000000000000ab0000000001',
+    "#EXTINF:4,",
+    "seg3.ts",
+    "#EXT-X-ENDLIST",
+  ].join("\n");
+
+  it("derives the IV from the media sequence number when the playlist omits it", () => {
+    const { segments } = parseMediaPlaylist(playlist, "https://cdn.example.com/v/index.m3u8");
+    expect(segments[0]!.key).toEqual({ uri: "https://keys.example.com/k", iv: ivFromSequence(7) });
+    expect(segments[1]!.key?.iv).toBe(ivFromSequence(8));
+    expect(ivFromSequence(7)).toBe("00000000000000000000000000000007");
+  });
+
+  it("keeps explicit IVs intact, leading zero bytes included", () => {
+    const { segments } = parseMediaPlaylist(playlist, "https://cdn.example.com/v/index.m3u8");
+    expect(segments[2]!.key?.iv).toBe("0000000a000000000000ab0000000001");
+    expect(ivToHex(new Uint32Array([0x0a, 0, 0xab00, 1]))).toBe("0000000a000000000000ab0000000001");
+  });
+
+  it("carries EXT-X-BYTERANGE to the fragments", () => {
+    const fragments = parseLevelsPlaylist(parseMediaPlaylist(playlist, "https://cdn.example.com/v/index.m3u8"));
+    expect(fragments[0]!.byteRange).toEqual({ offset: 720, length: 1000 });
+    expect(fragments[1]!.byteRange).toEqual({ offset: 1720, length: 2000 });
+    expect(fragments[2]!.byteRange).toBeUndefined();
+    expect(fragments[0]!.uri).toBe("https://cdn.example.com/v/all.ts");
+  });
+
+  it("ignores SAMPLE-AES (DRM is never decrypted)", () => {
+    const { segments } = parseMediaPlaylist(
+      ['#EXTM3U', '#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://x"', "#EXTINF:4,", "a.ts", "#EXT-X-ENDLIST"].join("\n"),
+      "https://cdn.example.com/",
+    );
+    expect(segments[0]!.key).toBeUndefined();
+  });
+});

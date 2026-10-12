@@ -203,6 +203,8 @@ export const OVERLAY_CSS = `
 .vd-ok { color: var(--vd-ok); }
 .vd-error { color: var(--vd-danger); }
 .vd-path { word-break: break-all; color: var(--vd-text-2); font-size: 12px; }
+.vd-note { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--vd-border); }
+.vd-note .vd-muted { margin: 0 0 2px; font-size: 12px; }
 .vd-link {
   padding: 0;
   border: 0;

@@ -30,6 +30,8 @@ function getFFmpeg(): Promise<FFmpeg> {
         wasmURL: chrome.runtime.getURL("./ffmpeg/core/ffmpeg-core.wasm"),
       });
       instance.on("log", ({ message }) => {
+        ffmpegLog.push(message);
+        if (ffmpegLog.length > 60) ffmpegLog.shift();
         logger.debug("FFmpeg:", message);
       });
       ffmpegInstance = instance;
@@ -41,6 +43,24 @@ function getFFmpeg(): Promise<FFmpeg> {
     });
   }
   return ffmpegLoading;
+}
+
+/** Last lines ffmpeg printed (to explain a failure instead of a bare "FS error"). */
+const ffmpegLog: string[] = [];
+
+/**
+ * Run ffmpeg and fail loudly if it did not succeed. Media Bridge ignored the exit
+ * code, so a failed conversion surfaced later as "ErrnoError: FS error" when reading
+ * an output file that was never written.
+ */
+async function runFfmpeg(ffmpeg: FFmpeg, args: string[]): Promise<void> {
+  ffmpegLog.length = 0;
+  const code = await ffmpeg.exec(args);
+  if (code !== 0) {
+    const relevant = ffmpegLog.filter((l) => /error|invalid|could not|not found|unsupported|failed/i.test(l));
+    const detail = (relevant.length ? relevant : ffmpegLog).slice(-3).join(" | ").slice(0, 400);
+    throw new Error(`ffmpeg could not build the file (code ${code})${detail ? `: ${detail}` : ""}`);
+  }
 }
 
 /**
@@ -191,7 +211,7 @@ async function processSingleStream(
     await ffmpeg.writeFile(inputFile, await fetchFile(result.blob));
 
     onProgress?.(0.7, "Converting to MP4");
-    await ffmpeg.exec(["-y", "-i", inputFile, ...ffmpegArgs, outputFileName]);
+    await runFfmpeg(ffmpeg, ["-y", "-i", inputFile, ...ffmpegArgs, outputFileName]);
 
     return buildMissingChunksWarning(result.missingCount, result.totalCount);
   } finally {
@@ -336,7 +356,7 @@ async function processHlsVideoAndAudioSeparate(
     await ffmpeg.writeFile(audioFile, await fetchFile(audioResult.blob));
 
     onProgress?.(0.7, "Merging video and audio");
-    await ffmpeg.exec([
+    await runFfmpeg(ffmpeg, [
       "-y",
       "-i", videoFile,
       "-i", audioFile,
@@ -373,7 +393,7 @@ async function processDashSingleStream(
     await ffmpeg.writeFile(inputFile, await fetchFile(result.blob));
 
     onProgress?.(0.7, "Converting to MP4");
-    await ffmpeg.exec([
+    await runFfmpeg(ffmpeg, [
       "-y",
       "-i", inputFile,
       "-c", "copy",
@@ -417,7 +437,7 @@ async function processDashVideoAndAudioSeparate(
     await ffmpeg.writeFile(audioFile, await fetchFile(audioResult.blob));
 
     onProgress?.(0.7, "Merging video and audio");
-    await ffmpeg.exec([
+    await runFfmpeg(ffmpeg, [
       "-y",
       "-i", videoFile,
       "-i", audioFile,

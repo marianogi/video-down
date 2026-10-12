@@ -6,7 +6,8 @@
  */
 
 import { test as base, expect, chromium, type BrowserContext, type Locator, type Page } from "@playwright/test";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -14,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
 import { startServer } from "./server.mjs";
 
+const execFileAsync = promisify(execFile);
 const EXTENSION = resolve(dirname(fileURLToPath(import.meta.url)), "../dist-e2e");
 
 type Fixtures = { page: Page };
@@ -201,6 +203,19 @@ test("2h · playlist in a platform's own encrypted format: explained, not broken
   await expect(menu(page).getByRole("button", { name: /native component/ })).toHaveCount(0);
 });
 
+for (const [name, what] of [
+  ["hls-aes-noiv", "AES-128 without IV attribute (IV = media sequence number)"],
+  ["hls-aes-zeroiv", "AES-128 with an IV whose words start with zero bytes"],
+  ["hls-byterange", "whole stream in one file addressed with EXT-X-BYTERANGE"],
+] as const) {
+  test(`2i · ${what}`, async ({ page, baseUrl, downloads }) => {
+    await page.goto(`${baseUrl}/${name}.html`);
+    await trigger(page).click();
+    await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
+    await downloadAndCheck(page, downloads, /Original file/, { height: 360 });
+  });
+}
+
 test("3 · DASH: video representations listed, audio merged", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/dash.html`);
   await trigger(page).click();
@@ -291,4 +306,54 @@ test("6 · large HLS is handed to the native component (VD_E2E_NATIVE=1)", async
   } finally {
     await worker.evaluate(() => chrome.storage.local.remove("storage_config"));
   }
+});
+
+// ---------------------------------------------------------------- second opinion: yt-dlp (opt-in)
+
+function installedYtdlp(): string | null {
+  const candidates = [
+    join(process.env.LOCALAPPDATA ?? "", "video-down/bin/yt-dlp.exe"),
+    join(homedir(), "Library/Application Support/video-down/bin/yt-dlp"),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? null;
+}
+
+test("parity · the menu lists the same HLS and DASH resolutions as yt-dlp (VD_E2E_NATIVE=1)", async ({ page, baseUrl }) => {
+  test.skip(process.env.VD_E2E_NATIVE !== "1", "needs the installed native component");
+  const ytdlp = installedYtdlp();
+  test.skip(!ytdlp, "yt-dlp not installed");
+  for (const [pagePath, manifest] of [
+    ["hls.html", "/media/hls/master.m3u8"],
+    ["dash.html", "/media/dash/manifest.mpd"],
+  ]) {
+    // Asynchronous on purpose: the test server lives in this same process.
+    const { stdout } = await execFileAsync(ytdlp!, ["-J", "--no-warnings", "--", `${baseUrl}${manifest}`], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const info = JSON.parse(stdout) as { formats: Array<{ height?: number; vcodec?: string }> };
+    const theirs = [...new Set(info.formats.filter((f) => f.height && f.vcodec !== "none").map((f) => f.height!))].sort(
+      (a, b) => b - a,
+    );
+    await page.goto(`${baseUrl}/${pagePath}`);
+    await trigger(page).click();
+    await expect(menu(page).getByRole("button", { name: /\d{3,4}p/ }).first()).toBeVisible({ timeout: 15_000 });
+    const labels = await menu(page).locator(".vd-option-main").allTextContents();
+    const ours = labels.map((l) => Number(l.match(/(\d{3,4})p/)?.[1])).filter(Boolean);
+    expect(ours, `${pagePath}: video-down vs yt-dlp`).toEqual(theirs);
+  }
+});
+
+test("7 · the browser engine fails → the same job continues with yt-dlp (VD_E2E_NATIVE=1)", async ({ page, baseUrl }) => {
+  test.skip(process.env.VD_E2E_NATIVE !== "1", "needs the installed native component");
+  await page.goto(`${baseUrl}/hls-garbage.html`);
+  await trigger(page).click();
+  await menu(page).getByRole("button", { name: /Original file/ }).click({ timeout: 15_000 });
+  // The job row switches from "browser" to "yt-dlp" without the user doing anything.
+  await expect(menu(page).locator(".vd-job .vd-option-meta", { hasText: "yt-dlp" })).toBeVisible({ timeout: 60_000 });
+  // It reaches a final state through yt-dlp (with garbage input yt-dlp may still write a file:
+  // it does not validate media). Remove whatever it saved: tests must not leave files behind.
+  await expect(menu(page).locator(".vd-job").getByText(/Download finished|Error/)).toBeVisible({ timeout: 120_000 });
+  const saved = (await menu(page).locator(".vd-path").first().textContent().catch(() => ""))?.trim();
+  if (saved) rmSync(saved, { force: true });
 });

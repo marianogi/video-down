@@ -28,6 +28,8 @@
   "nativeOutdated": { "message": "Component from another version ($1)" },
   "optExtVersion": { "message": "Extension version:" },
   "optVersionMismatch": { "message": "The extension is $1 and the native component is $2. Run the installer for version $1 and reload the extension in chrome://extensions." },
+  "retryingNative": { "message": "The browser could not build the video; retrying with the native component (yt-dlp)…" },
+  "otherListsFailed": { "message": "Other video playlists on this page could not be read ($1). They may have more qualities:" },
   "nativeUnsupported": { "message": "The video of this player was not found and yt-dlp does not recognise the page. Press play, wait a few seconds and press “Try again”." },
   "nativeFailed": { "message": "The native component could not read this video." },
   "viaNative": { "message": "It will be downloaded by the native component (yt-dlp)." },

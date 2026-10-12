@@ -320,6 +320,44 @@ function resolveFilename(payload: DownloadRequestPayload): string {
     : generateFilenameWithExtension(url, extension);
 }
 
+/**
+ * The browser engine (segments + ffmpeg.wasm) failed on an HLS/DASH stream. If the native
+ * component is installed, continue the SAME job with yt-dlp and the native ffmpeg, which
+ * handle more stream variants. Returns true when the native component took over.
+ */
+async function tryNativeFallback(
+  payload: DownloadRequestPayload,
+  origin: Origin | undefined,
+  id: string,
+  reason: string | undefined,
+): Promise<boolean> {
+  if (payload.metadata.format === VideoFormat.DIRECT) return false;
+  const status = await nativeStatus();
+  if (!status.installed) return false;
+  logger.info(`Browser engine failed (${reason ?? "unknown"}); handing ${id} to the native component`);
+  const state = await getDownload(id);
+  if (state) {
+    state.via = "native";
+    state.progress = { url: state.url, stage: DownloadStage.DETECTING, message: "native-fallback", percentage: 0 };
+    state.updatedAt = Date.now();
+    await storeDownload(state);
+    pushProgress(state);
+  }
+  const reply = await startNativeForStream(payload, origin, id);
+  if (!reply.success && state) {
+    state.progress = {
+      url: state.url,
+      stage: DownloadStage.FAILED,
+      error: `${reason ?? ""}${reason ? " · " : ""}yt-dlp: ${reply.error ?? "?"}`,
+    };
+    state.updatedAt = Date.now();
+    await storeDownload(state);
+    pushProgress(state);
+    await afterFinish(state);
+  }
+  return true;
+}
+
 async function startBrowserDownload(payload: DownloadRequestPayload, origin?: Origin): Promise<DownloadStartedReply> {
   if (!isSafeHttpUrl(payload.url) || !payload.metadata) return { success: false, error: "invalid request" };
   const settings = await loadSettings();
@@ -380,12 +418,17 @@ async function startBrowserDownload(payload: DownloadRequestPayload, origin?: Or
     .then(async (state) => {
       state.via = "browser";
       if (payload.variantLabel) state.variantLabel = payload.variantLabel;
+      if (state.progress.stage === DownloadStage.FAILED && !abort.signal.aborted) {
+        if (await tryNativeFallback(payload, origin, id, state.progress.error)) return;
+      }
       if (!abort.signal.aborted) pushProgress(state);
       await afterFinish(state);
     })
     .catch(async (error: unknown) => {
       if (error instanceof CancellationError || abort.signal.aborted) return;
       logger.error(`Download failed for ${payload.url}:`, error);
+      const reason = error instanceof Error ? error.message : String(error);
+      if (await tryNativeFallback(payload, origin, id, reason)) return;
       const state = await getDownload(id);
       if (state) {
         state.via = "browser";
@@ -429,8 +472,8 @@ async function handleNativeProbe(payload: NativeProbePayload): Promise<NativePro
   }
 }
 
-function startNativeDownload(payload: NativeDownloadPayload, origin?: Origin): DownloadStartedReply {
-  const id = generateDownloadId(payload.pageUrl || "native");
+function startNativeDownload(payload: NativeDownloadPayload, origin?: Origin, presetId?: string): DownloadStartedReply {
+  const id = presetId ?? generateDownloadId(payload.pageUrl || "native");
   if (origin) jobOrigins.set(id, origin);
   const now = Date.now();
   const state: DownloadState = {
@@ -488,7 +531,11 @@ function startNativeDownload(payload: NativeDownloadPayload, origin?: Origin): D
 }
 
 /** Big HLS/DASH stream: probe the manifest with yt-dlp and pick the same height. */
-async function startNativeForStream(payload: DownloadRequestPayload, origin?: Origin): Promise<DownloadStartedReply> {
+async function startNativeForStream(
+  payload: DownloadRequestPayload,
+  origin?: Origin,
+  presetId?: string,
+): Promise<DownloadStartedReply> {
   try {
     const probe = await nativeProbe(payload.url, payload.metadata.pageUrl);
     const wanted = payload.variantHeight;
@@ -506,6 +553,7 @@ async function startNativeForStream(payload: DownloadRequestPayload, origin?: Or
         pageUrl: payload.metadata.pageUrl,
       },
       origin,
+      presetId,
     );
   } catch (err) {
     return { success: false, ...friendlyNativeError(err) };

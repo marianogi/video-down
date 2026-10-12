@@ -318,10 +318,19 @@ export abstract class BasePlaylistHandler {
     }
 
     const attempts = fetchAttempts ?? this.maxRetries;
-    const data = await cancelIfAborted(
-      fetchArrayBuffer(fragment.uri, attempts, this.abortSignal, undefined, this.retryDelayMs, this.retryBackoffFactor),
+    // EXT-X-BYTERANGE / DASH ranges: fetch only this fragment's bytes of the shared file.
+    const headers = fragment.byteRange
+      ? { Range: `bytes=${fragment.byteRange.offset}-${fragment.byteRange.offset + fragment.byteRange.length - 1}` }
+      : undefined;
+    let data = await cancelIfAborted(
+      fetchArrayBuffer(fragment.uri, attempts, this.abortSignal, headers, this.retryDelayMs, this.retryBackoffFactor),
       this.abortSignal,
     );
+    // A server that ignores Range answers 200 with the whole file: cut the slice ourselves.
+    if (fragment.byteRange && data.byteLength > fragment.byteRange.length) {
+      const { offset, length } = fragment.byteRange;
+      data = data.slice(offset, offset + length);
+    }
 
     const decryptedData = await cancelIfAborted(
       decryptFragment(fragment.key, data, attempts, this.abortSignal, undefined, this.retryDelayMs, this.retryBackoffFactor),

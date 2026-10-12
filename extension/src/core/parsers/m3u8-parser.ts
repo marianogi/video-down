@@ -5,7 +5,7 @@
 import { Parser } from "m3u8-parser";
 import { buildAbsoluteURL } from "url-toolkit";
 import { Level, LevelType } from "../types";
-import type { ParsedPlaylist, ParsedSegment } from "./playlist-utils";
+import type { ByteRange, ParsedPlaylist, ParsedSegment } from "./playlist-utils";
 import { normalizeUrl } from "../utils/url-utils";
 import { logger } from "../utils/logger";
 
@@ -16,29 +16,58 @@ import { parseLevelsPlaylist } from "./playlist-utils";
  * Parse a media playlist into a ParsedPlaylist (protocol-agnostic intermediate).
  * Pass the result to parseLevelsPlaylist() to get Fragment[].
  */
+/**
+ * m3u8-parser returns an explicit IV as a Uint32Array of four 32-bit words.
+ * Each word must be written as 8 hex digits (Media Bridge padded to 2, which
+ * corrupted every IV with a word that starts with zero bytes).
+ */
+export function ivToHex(iv: ArrayLike<number>): string {
+  return Array.from(iv)
+    .map((word) => (word >>> 0).toString(16).padStart(8, "0"))
+    .join("");
+}
+
+/**
+ * RFC 8216 §5.2: when EXT-X-KEY has no IV attribute, the IV is the segment's
+ * Media Sequence Number as a 128-bit big-endian integer.
+ */
+export function ivFromSequence(sequence: number): string {
+  return BigInt(sequence).toString(16).padStart(32, "0");
+}
+
+function toRange(r: { offset?: number | bigint; length?: number | bigint } | undefined): ByteRange | undefined {
+  if (!r || r.length === undefined) return undefined;
+  return { offset: Number(r.offset ?? 0), length: Number(r.length) };
+}
+
 export function parseMediaPlaylist(playlistText: string, baseUrl: string): ParsedPlaylist {
   const parser = new Parser();
   parser.push(playlistText);
   parser.end();
 
-  const segments: ParsedSegment[] = (parser.manifest.segments || []).map((segment) => {
+  const firstSequence = Number(parser.manifest.mediaSequence ?? 0);
+
+  const segments: ParsedSegment[] = (parser.manifest.segments || []).map((segment, i) => {
     const ps: ParsedSegment = { uri: buildAbsoluteURL(baseUrl, segment.uri) };
+    const range = toRange(segment.byterange);
+    if (range) ps.byteRange = range;
 
     if (segment.map?.uri) {
       ps.initUri = buildAbsoluteURL(baseUrl, segment.map.uri);
-      if (segment.map.byterange) {
-        ps.initByteRange = `${segment.map.byterange.offset}:${segment.map.byterange.length}`;
+      const initRange = toRange(segment.map.byterange);
+      if (initRange) ps.initByteRange = initRange;
+      // An encrypted init segment must carry its own explicit IV (RFC 8216 §4.3.2.5).
+      const mapKey = (segment.map as { key?: { method?: string; uri?: string; iv?: Uint32Array } }).key;
+      if (mapKey?.uri && mapKey.iv && (mapKey.method ?? "AES-128") === "AES-128") {
+        ps.initKey = { uri: buildAbsoluteURL(baseUrl, mapKey.uri), iv: ivToHex(mapKey.iv) };
       }
     }
 
-    if (segment.key?.uri) {
+    // Only AES-128 is decrypted here; SAMPLE-AES and friends are DRM and never reach a download.
+    if (segment.key?.uri && (segment.key.method ?? "AES-128") === "AES-128") {
       ps.key = {
         uri: buildAbsoluteURL(baseUrl, segment.key.uri),
-        iv: segment.key.iv
-          ? Array.from(segment.key.iv)
-              .map((b) => b.toString(16).padStart(2, "0"))
-              .join("")
-          : null,
+        iv: segment.key.iv ? ivToHex(segment.key.iv) : ivFromSequence(firstSequence + i),
       };
     }
 

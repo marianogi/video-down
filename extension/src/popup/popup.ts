@@ -36,7 +36,7 @@ function stageText(d: DownloadState): { text: string; cls: string } {
       return { text: bits.join(" · "), cls: "muted" };
     }
     default:
-      return { text: t("stageStarting"), cls: "muted" };
+      return { text: p.message === "native-fallback" ? t("retryingNative") : t("stageStarting"), cls: "muted" };
   }
 }
 

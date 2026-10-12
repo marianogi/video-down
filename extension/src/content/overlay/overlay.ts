@@ -215,6 +215,7 @@ export class Overlay {
       const job = tr.jobs.get(push.id);
       if (!job) continue;
       job.progress = push.progress;
+      if (push.via) job.via = push.via;
       if (push.filePath) job.filePath = push.filePath;
       if (push.label) job.label = push.label;
       this.updateRing(tr);
@@ -518,14 +519,30 @@ export class Overlay {
     }
   }
 
+  private failureReason(failure: DetectionFailure): string {
+    if (failure.reason === "http") return t("failHttp", String(failure.status ?? "?"));
+    if (failure.reason === "network") return t("failNetwork");
+    if (failure.body === "binary") return t("failOpaque");
+    if (failure.body === "html") return t("failHtml");
+    if (failure.body === "json") return t("failJson");
+    return t("failOther");
+  }
+
+  /** Under the choices: other playlists of the page could not be read (e.g. a master with more qualities). */
+  private appendFailureNote(exceptUrl: string): void {
+    const others = this.deps.failures().filter((f) => f.url !== exceptUrl);
+    if (others.length === 0) return;
+    const f = others[0]!;
+    const jobs = this.popover.querySelector("[data-jobs]");
+    const note = el("div", { className: "vd-note" }, [
+      el("p", { className: "vd-muted", text: t("otherListsFailed", String(others.length)) }),
+      el("p", { className: "vd-path", text: `${redactUrl(f.url)} · ${this.failureReason(f)}` }),
+    ]);
+    this.popover.insertBefore(note, jobs);
+  }
+
   private renderFailure(tr: Tracked, failure: DetectionFailure, nativeAvailable: boolean): void {
-    let reason: string;
-    if (failure.reason === "http") reason = t("failHttp", String(failure.status ?? "?"));
-    else if (failure.reason === "network") reason = t("failNetwork");
-    else if (failure.body === "binary") reason = t("failOpaque");
-    else if (failure.body === "html") reason = t("failHtml");
-    else if (failure.body === "json") reason = t("failJson");
-    else reason = t("failOther");
+    const reason = this.failureReason(failure);
 
     const body: Node[] = [
       el("div", { className: "vd-notice", attrs: { role: "alert" } }, [
@@ -710,6 +727,7 @@ export class Overlay {
       };
     });
     this.renderChoices(t("chooseQuality"), null, choices);
+    this.appendFailureNote(media.url);
   }
 
   // ---- native component (yt-dlp)
@@ -836,7 +854,7 @@ export class Overlay {
         break;
       }
       default:
-        status = t("stageStarting");
+        status = p?.message === "native-fallback" ? t("retryingNative") : t("stageStarting");
     }
 
     const bar = el("div", {

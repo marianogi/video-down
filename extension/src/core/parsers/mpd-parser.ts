@@ -20,10 +20,18 @@ export type { MpdManifest } from "mpd-parser";
  * Convert an mpd-parser MpdPlaylist into a ParsedPlaylist.
  */
 function mpdPlaylistToParsedPlaylist(playlist: MpdPlaylist): ParsedPlaylist {
-  const segments: ParsedSegment[] = (playlist.segments || []).map((segment) => ({
-    uri: segment.resolvedUri || segment.uri,
-    ...(segment.map ? { initUri: segment.map.resolvedUri || segment.map.uri } : {}),
-  }));
+  const range = (r?: { offset: number | bigint; length: number | bigint }) =>
+    r ? { offset: Number(r.offset), length: Number(r.length) } : undefined;
+  const segments: ParsedSegment[] = (playlist.segments || []).map((segment) => {
+    const byteRange = range((segment as { byterange?: { offset: number | bigint; length: number | bigint } }).byterange);
+    const initByteRange = range(segment.map?.byterange);
+    return {
+      uri: segment.resolvedUri || segment.uri,
+      ...(byteRange ? { byteRange } : {}),
+      ...(segment.map ? { initUri: segment.map.resolvedUri || segment.map.uri } : {}),
+      ...(initByteRange ? { initByteRange } : {}),
+    };
+  });
   return { segments };
 }
 

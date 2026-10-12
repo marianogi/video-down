@@ -26,6 +26,7 @@
 import { VideoMetadata, VideoFormat } from "../../types";
 import { detectFormatFromUrl } from "../../utils/url-utils";
 import { extractThumbnail } from "../thumbnail-utils";
+import { logger } from "../../utils/logger";
 
 const DOM_SCAN_DEBOUNCE_MS = 1000;
 const MAX_HEADING_SEARCH_DEPTH = 3;
@@ -89,7 +90,7 @@ export class DirectDetectionHandler {
 
     // Check if it's audio-only (skip it)
     if (this.isAudioOnlyUrl(url)) {
-      console.log("[video-down] Skipping audio-only URL:", url);
+      logger.debug("[video-down] Skipping audio-only URL");
       return null;
     }
 
@@ -191,7 +192,7 @@ export class DirectDetectionHandler {
 
     for (const result of results) {
       if (result.status === "fulfilled" && result.value) {
-        console.log("[video-down] Detected video:", {
+        logger.debug("[video-down] Detected video:", {
           url: result.value.url,
           format: result.value.format,
           pageUrl: result.value.pageUrl,

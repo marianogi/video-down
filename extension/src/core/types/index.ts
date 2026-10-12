@@ -132,6 +132,8 @@ export interface Fragment {
     uri: string | null;
   };
   uri: string;
+  /** Only this part of `uri` belongs to the fragment (sent as an HTTP Range request) */
+  byteRange?: { offset: number; length: number };
 }
 
 export interface Level {

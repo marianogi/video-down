@@ -44,6 +44,35 @@ export async function decrypt(
   return decryptData;
 }
 
+/** Keys by URI, shared by all fragments of a download (bounded, oldest evicted first). */
+const keyCache = new Map<string, Promise<ArrayBuffer>>();
+const KEY_CACHE_LIMIT = 64;
+
+function getKey(
+  uri: string,
+  fetchAttempts: number,
+  abortSignal?: AbortSignal,
+  headers?: Record<string, string>,
+  retryDelayMs?: number,
+  retryBackoffFactor?: number,
+): Promise<ArrayBuffer> {
+  let pending = keyCache.get(uri);
+  if (!pending) {
+    pending = fetchArrayBuffer(uri, fetchAttempts, abortSignal, headers, retryDelayMs, retryBackoffFactor).then((buf) => {
+      // An AES-128 key is exactly 16 bytes. Anything else is usually an error page or a
+      // platform's own key service: say so instead of producing garbage.
+      if (buf.byteLength !== 16) {
+        throw new Error(`the encryption key is not a valid AES-128 key (${buf.byteLength} bytes)`);
+      }
+      return buf;
+    });
+    keyCache.set(uri, pending);
+    pending.catch(() => keyCache.delete(uri));
+    if (keyCache.size > KEY_CACHE_LIMIT) keyCache.delete(keyCache.keys().next().value!);
+  }
+  return pending;
+}
+
 /**
  * Decrypt a single fragment if encrypted (AES-128)
  * Returns data unchanged if not encrypted
@@ -62,14 +91,18 @@ export async function decryptFragment(
   retryDelayMs?: number,
   retryBackoffFactor?: number,
 ): Promise<ArrayBuffer> {
-  // If no key URI or IV, fragment is not encrypted
-  if (!key.uri || !key.iv) {
+  // No key URI: not encrypted. (The parser always provides an IV for AES-128 segments,
+  // deriving it from the media sequence number when the playlist omits it.)
+  if (!key.uri) {
     return data;
+  }
+  if (!key.iv) {
+    throw new Error("encrypted segment without IV");
   }
 
   try {
-    // Fetch the encryption key
-    const keyArrayBuffer = await fetchArrayBuffer(key.uri, fetchAttempts, abortSignal, headers, retryDelayMs, retryBackoffFactor);
+    // Fetch the encryption key once per URI (Media Bridge fetched it for every segment)
+    const keyArrayBuffer = await getKey(key.uri, fetchAttempts, abortSignal, headers, retryDelayMs, retryBackoffFactor);
 
     // Convert IV from hex string to Uint8Array
     // IV should be 16 bytes for AES-128
