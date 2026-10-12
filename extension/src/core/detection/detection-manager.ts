@@ -26,6 +26,7 @@ import { detectFormatFromUrl } from "../utils/url-utils";
 import { DirectDetectionHandler } from "./direct/direct-detection-handler";
 import { HlsDetectionHandler } from "./hls/hls-detection-handler";
 import { DashDetectionHandler } from "./dash/dash-detection-handler";
+import type { DetectionFailure } from "./detection-failure";
 
 /** Configuration options for DetectionManager */
 export interface DetectionManagerOptions {
@@ -33,6 +34,8 @@ export interface DetectionManagerOptions {
   onVideoDetected?: (video: VideoMetadata) => void;
   /** Optional callback for removed videos */
   onVideoRemoved?: (url: string) => void;
+  /** Called when a manifest seen on the network cannot be read */
+  onDetectionFailed?: (failure: DetectionFailure) => void;
   /** Max distinct URL path keys tracked per page (default: 500) */
   detectionCacheSize?: number;
   /** Max master playlists held in memory by HLS handler (default: 50) */
@@ -63,11 +66,13 @@ export class DetectionManager {
     this.hlsHandler = new HlsDetectionHandler({
       onVideoDetected: (video) => this.handleVideoDetected(video),
       onVideoRemoved: (url) => this.handleVideoRemoved(url),
+      onDetectionFailed: options.onDetectionFailed,
       detectionCacheSize: options.detectionCacheSize,
       masterPlaylistCacheSize: options.masterPlaylistCacheSize,
     });
     this.dashHandler = new DashDetectionHandler({
       onVideoDetected: (video) => this.handleVideoDetected(video),
+      onDetectionFailed: options.onDetectionFailed,
       detectionCacheSize: options.detectionCacheSize,
     });
   }

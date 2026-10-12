@@ -24,6 +24,7 @@ import {
 import { DownloadStage, VideoFormat, type VideoMetadata, type DownloadProgress } from "../../core/types";
 import type { BrowserVariant } from "../../core/variants";
 import type { Variant as NativeVariant } from "@host/protocol";
+import { type DetectionFailure, redactUrl } from "../../core/detection/detection-failure";
 
 declare const __VD_SHADOW_MODE__: ShadowRootMode;
 
@@ -32,6 +33,10 @@ export interface OverlayDeps {
   allMedia(): VideoMetadata[];
   isNativeAvailable(): Promise<boolean>;
   minVideoWidth: number;
+  /** Manifests seen in this frame that could not be read, newest first */
+  failures(): DetectionFailure[];
+  /** Read those manifests again (e.g. after the player refreshed its token) */
+  retryFailed(): void;
 }
 
 interface JobView {
@@ -479,6 +484,18 @@ export class Overlay {
     }
     this.lastRoute = r;
 
+    // A manifest was seen but could not be read: say why, instead of waiting forever or
+    // handing the page to yt-dlp blindly (which rarely knows an embedded player's page).
+    const unreadable =
+      r.kind === "pending" ||
+      ((r.kind === "native" || r.kind === "need-native") && r.reason === "unknown-stream");
+    const failures = unreadable ? this.deps.failures() : [];
+    if (failures.length > 0) {
+      const native = r.kind === "native" || (await this.deps.isNativeAvailable().catch(() => false));
+      if (token !== this.renderToken) return;
+      return this.renderFailure(tr, failures[0]!, native);
+    }
+
     switch (r.kind) {
       case "pending":
         this.renderLoading(t("waitingForVideo"));
@@ -499,6 +516,41 @@ export class Overlay {
       case "native":
         return this.renderNative(tr, r.url, r.reason === "youtube" ? undefined : referrerForNative(), token);
     }
+  }
+
+  private renderFailure(tr: Tracked, failure: DetectionFailure, nativeAvailable: boolean): void {
+    let reason: string;
+    if (failure.reason === "http") reason = t("failHttp", String(failure.status ?? "?"));
+    else if (failure.reason === "network") reason = t("failNetwork");
+    else if (failure.body === "binary") reason = t("failOpaque");
+    else if (failure.body === "html") reason = t("failHtml");
+    else if (failure.body === "json") reason = t("failJson");
+    else reason = t("failOther");
+
+    const body: Node[] = [
+      el("div", { className: "vd-notice", attrs: { role: "alert" } }, [
+        el("strong", { text: t("failTitle") }),
+        el("span", { text: reason }),
+      ]),
+      el("p", { className: "vd-path", text: t("failWhere", redactUrl(failure.url)) }),
+    ];
+    const retry = el("button", { className: "vd-action vd-secondary", text: t("retry"), attrs: { type: "button" } });
+    retry.addEventListener("click", () => {
+      this.deps.retryFailed();
+      this.lastRoute = null;
+      this.renderLoading(t("searching"));
+      // Detection reports back through onMediaChanged(); re-route anyway after a moment.
+      setTimeout(() => {
+        if (this.openKey === tr.key) void this.renderRoute(tr);
+      }, 2500);
+    });
+    body.push(retry);
+    if (nativeAvailable && failure.body !== "binary") {
+      const native = el("button", { className: "vd-action", text: t("tryNative"), attrs: { type: "button" } });
+      native.addEventListener("click", () => void this.renderNative(tr, failure.url, location.href, ++this.renderToken));
+      body.push(el("span", { text: " " }), native);
+    }
+    this.frame(t("menuTitle"), body);
   }
 
   private renderDrm(system?: string): void {

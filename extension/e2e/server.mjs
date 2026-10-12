@@ -5,6 +5,8 @@
 //   /protected/hls/...   HLS that answers 403 unless the Referer is the player's origin
 //                        (common with players embedded from another site)
 //   /odd/hls/...         HLS served as text/plain, master without extension (body sniffing)
+//   /once/master.m3u8?token=…  single-use link: the first request gets the playlist, any repeat a 403
+//   /opaque/master.m3u8  "playlist" that is not HLS (encrypted bytes), served as mpegurl
 //   /protected/hls/cross-master.m3u8
 //                        master whose variants and segments live on ANOTHER host (localhost vs
 //                        127.0.0.1), all of them requiring the player's Referer
@@ -25,6 +27,8 @@ const TYPES = {
   ".key": "application/octet-stream",
 };
 
+const usedTokens = new Set();
+
 export function startServer(port = 0) {
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -32,7 +36,20 @@ export function startServer(port = 0) {
     let pathname = url.pathname;
     let type;
 
-    if (pathname.startsWith("/protected/")) {
+    if (pathname === "/once/master.m3u8") {
+      const token = url.searchParams.get("token") ?? "";
+      if (usedTokens.has(token)) {
+        res.writeHead(403, { "Content-Type": "text/plain" }).end("token already used");
+        return;
+      }
+      usedTokens.add(token);
+      pathname = "/media/hls/master.m3u8";
+    } else if (pathname === "/opaque/master.m3u8") {
+      const bytes = Buffer.alloc(512);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 73 + 41) % 256;
+      res.writeHead(200, { "Content-Type": TYPES[".m3u8"], "Access-Control-Allow-Origin": "*" }).end(bytes);
+      return;
+    } else if (pathname.startsWith("/protected/")) {
       const referer = req.headers.referer ?? "";
       if (!referer.startsWith(`${playerOrigin}/`)) {
         res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: bad referer");

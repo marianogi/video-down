@@ -37,6 +37,7 @@ import { logger } from "../../utils/logger";
 import { extractThumbnail } from "../thumbnail-utils";
 import { detectHlsDrm, canDecrypt } from "../../utils/drm-utils";
 import { DEFAULT_DETECTION_CACHE_SIZE, DEFAULT_MASTER_PLAYLIST_CACHE_SIZE } from "../../../shared/constants";
+import { type DetectionFailure, describeBody, redactUrl, statusFromError } from "../detection-failure";
 
 /** Configuration options for HlsDetectionHandler */
 export interface HlsDetectionHandlerOptions {
@@ -44,6 +45,8 @@ export interface HlsDetectionHandlerOptions {
   onVideoDetected?: (video: VideoMetadata) => void;
   /** Optional callback for removed videos */
   onVideoRemoved?: (url: string) => void;
+  /** Called when a manifest seen on the network cannot be read */
+  onDetectionFailed?: (failure: DetectionFailure) => void;
   /** Max distinct URL path keys tracked per page (default: 500) */
   detectionCacheSize?: number;
   /** Max master playlists held in memory (default: 50) */
@@ -64,6 +67,7 @@ interface MasterPlaylistInfo {
 export class HlsDetectionHandler {
   private onVideoDetected?: (video: VideoMetadata) => void;
   private onVideoRemoved?: (url: string) => void;
+  private onDetectionFailed?: (failure: DetectionFailure) => void;
   // Track master playlists and their variants
   private masterPlaylists: Map<string, MasterPlaylistInfo> = new Map();
   // Deduplicate HLS URLs by origin+pathname (ignoring query params like tokens/timestamps)
@@ -78,6 +82,7 @@ export class HlsDetectionHandler {
   constructor(options: HlsDetectionHandlerOptions = {}) {
     this.onVideoDetected = options.onVideoDetected;
     this.onVideoRemoved = options.onVideoRemoved;
+    this.onDetectionFailed = options.onDetectionFailed;
     this.maxSeenPathKeys = options.detectionCacheSize ?? DEFAULT_DETECTION_CACHE_SIZE;
     this.maxMasterPlaylists = options.masterPlaylistCacheSize ?? DEFAULT_MASTER_PLAYLIST_CACHE_SIZE;
   }
@@ -133,13 +138,24 @@ export class HlsDetectionHandler {
         );
       }
 
-      logger.warn(
-        "[video-down] HLS URL is neither master nor media playlist, skipping",
-        { url },
-      );
+      // Not a standard playlist (error page, JSON, or a format/encryption of the platform's own).
+      // Forget the key so a later request (fresh token, after pressing play) is tried again.
+      this.seenPathKeys.delete(pathKey);
+      const body = describeBody(playlistText);
+      logger.debug(`[video-down] Not an HLS playlist (${body}): ${redactUrl(url)}`);
+      this.onDetectionFailed?.({ url, format: VideoFormat.HLS, reason: "not-playlist", body, at: Date.now() });
       return null;
     } catch (error) {
-      logger.error("[video-down] Failed to validate HLS playlist:", error);
+      this.seenPathKeys.delete(pathKey);
+      const status = statusFromError(error);
+      logger.debug(`[video-down] Could not read HLS playlist ${redactUrl(url)}: ${status ?? String(error)}`);
+      this.onDetectionFailed?.({
+        url,
+        format: VideoFormat.HLS,
+        reason: status ? "http" : "network",
+        ...(status ? { status } : {}),
+        at: Date.now(),
+      });
       return null;
     }
   }

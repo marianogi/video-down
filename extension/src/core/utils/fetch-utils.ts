@@ -106,6 +106,10 @@ export async function fetchResource(
 
         if (response === null) {
           reject(error || new Error("Unknown fetch error"));
+        } else if (response.status < 200 || response.status > 299) {
+          // Same contract as the direct path: an error page is not content.
+          // (Before, a 403/404 body reached the playlist parsers as if it were a playlist.)
+          reject(new Error(`HTTP ${response.status} ${response.statusText || ""}`.trim()));
         } else {
           // Use undefined on a 204 - No Content
           // Convert array of bytes back to ArrayBuffer

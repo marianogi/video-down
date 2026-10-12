@@ -228,3 +228,29 @@ describe("resolveSettings", () => {
     expect(resolveSettings(null).minVideoWidth).toBe(120);
   });
 });
+
+// ------------------------------------------------------------------ detection failures
+
+import { describeBody, redactUrl, statusFromError } from "../src/core/detection/detection-failure";
+
+describe("detection failures", () => {
+  it("classifies what came back instead of a playlist", () => {
+    expect(describeBody("<!DOCTYPE html><html><body>Forbidden</body></html>")).toBe("html");
+    expect(describeBody('{"error":"expired"}')).toBe("json");
+    expect(describeBody("<Error><Code>AccessDenied</Code></Error>")).toBe("xml");
+    expect(describeBody("")).toBe("empty");
+    expect(describeBody(String.fromCharCode(...Array.from({ length: 200 }, (_, i) => (i * 7) % 32)))).toBe("binary");
+    expect(describeBody("hello world")).toBe("text");
+  });
+
+  it("never keeps tokens when describing a URL", () => {
+    expect(redactUrl("https://cdn.example.com/v/1/master.m3u8?hdnts=exp=1~acl=*~hmac=abc&sig=x")).toBe(
+      "cdn.example.com/v/1/master.m3u8",
+    );
+  });
+
+  it("reads the HTTP status from fetch errors", () => {
+    expect(statusFromError(new Error("HTTP 403 Forbidden"))).toBe(403);
+    expect(statusFromError(new Error("Failed to fetch"))).toBeUndefined();
+  });
+});

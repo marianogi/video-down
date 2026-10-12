@@ -63,6 +63,9 @@ const test = base.extend<Fixtures, WorkerFixtures>({
       });
       // Wait for the service worker so the extension is ready before the first page loads.
       if (context.serviceWorkers().length === 0) await context.waitForEvent("serviceworker");
+      // On a brand-new install Chrome only learns the worker's webRequest listeners once its
+      // script has run. (An installed extension's worker is woken for each request instead.)
+      await new Promise((r) => setTimeout(r, 1000));
       // Close the welcome tab opened on install.
       for (const p of context.pages()) if (p.url().includes("options.html")) await p.close();
       await use(context);
@@ -180,6 +183,22 @@ test("2f · same, with variants and segments on another host that also checks th
   const m = overlay.getByRole("dialog");
   await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await downloadAndCheck(m, downloads, /720p/, { height: 720 });
+});
+
+test("2g · playlist that cannot be read again (single-use link): the menu says why", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/once.html`);
+  await trigger(page).click();
+  await expect(menu(page).getByText("The video was found but could not be read")).toBeVisible({ timeout: 20_000 });
+  await expect(menu(page).getByText(/HTTP 403/)).toBeVisible();
+  await expect(menu(page).getByText(/127\.0\.0\.1:\d+\/once\/master\.m3u8/)).toBeVisible();
+  await expect(menu(page).getByText(/token=/)).toHaveCount(0);
+});
+
+test("2h · playlist in a platform's own encrypted format: explained, not broken", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/opaque.html`);
+  await trigger(page).click();
+  await expect(menu(page).getByText(/not standard HLS or DASH/)).toBeVisible({ timeout: 20_000 });
+  await expect(menu(page).getByRole("button", { name: /native component/ })).toHaveCount(0);
 });
 
 test("3 · DASH: video representations listed, audio merged", async ({ page, baseUrl, downloads }) => {

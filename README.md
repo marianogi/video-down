@@ -67,6 +67,7 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 | 8 | Vídeo con **DRM** (Widevine, PlayReady, FairPlay, ClearKey) | Ninguna | Se muestra el aviso y no se ofrece descarga. | — | — |
 | 9 | Emisión **en directo** | Ninguna en esta versión | Se avisa de que no se graban directos. | — | — |
 | 10 | Vídeo que todavía no ha empezado a cargar | Espera | El menú dice «Esperando a que el vídeo empiece a cargar» y se actualiza solo. | — | — |
+| 11 | Lista detectada que no se puede leer (enlace caducado o de un solo uso, página de error, formato propio cifrado) | Ninguna, con diagnóstico | El menú explica el motivo exacto y ofrece «Reintentar»; si procede, también probar con yt-dlp. | — | — |
 
 ### Caso 1. Fichero de vídeo directo
 
@@ -176,6 +177,22 @@ Cada `<video>` tiene su propio icono. Como un `blob:` no dice de qué manifiesto
 asocia cada manifiesto al vídeo que empezó a cargar más cerca en el tiempo. Si no lo puede saber,
 ofrece todos los manifiestos detectados en ese marco.
 
+### Caso 11. El vídeo se encuentra, pero no se puede leer
+
+A veces la extensión ve pasar la lista del vídeo, pero al leerla no obtiene una lista válida. En ese caso
+el menú no se queda esperando ni pasa la página a yt-dlp a ciegas: explica el motivo exacto y muestra la
+lista detectada (servidor y ruta, nunca los tokens de la URL).
+
+| Lo que pasó | Lo que dice el menú | Qué se puede hacer |
+|---|---|---|
+| El servidor rechaza la lectura (HTTP 401, 403…) | Rechazo con su código | El enlace puede ser de un solo uso o haber caducado: dale al play y pulsa «Reintentar». Si el componente nativo está instalado, también se ofrece probar con yt-dlp. |
+| El servidor devuelve una página web o datos JSON | Página o datos en lugar de la lista | Suele indicar sesión o enlace caducados. «Reintentar». |
+| La lista no es HLS ni DASH estándar (bytes cifrados o formato propio) | Lista cifrada o en formato propio | Nada: es una protección de la plataforma y video-down no la rompe, igual que con el DRM. |
+| No hay conexión con el servidor | Error de conexión | «Reintentar». |
+
+«Reintentar» vuelve a leer las listas que fallaron. Además, si el reproductor vuelve a pedir la misma lista
+con un token nuevo, la extensión adopta automáticamente la URL más reciente.
+
 ---
 
 ## Diagrama de decisión
@@ -197,7 +214,9 @@ flowchart TD
     G -- Sí --> YT2[yt-dlp con la misma resolución]
     G -- No --> WASM[Segmentos + ffmpeg.wasm<br/>en el navegador]
     WASM -- Falla --> RETRY[Botón «Probar con el<br/>componente nativo»]
-    F -- No --> H{¿blob: sin manifiesto<br/>tras 4 s?}
+    F -- No --> X{¿Se vio una lista<br/>que no se pudo leer?}
+    X -- Sí --> DIAG[Diagnóstico con el motivo<br/>y «Reintentar»]
+    X -- No --> H{¿blob: sin manifiesto<br/>tras 4 s?}
     H -- No --> WAIT[Esperando a que cargue]
     H -- Sí --> N2{¿Componente nativo instalado?}
     N2 -- Sí --> GEN[yt-dlp con la URL de la página]
@@ -442,9 +461,9 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 26) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes | `pnpm test` |
+| Unitarias de la extensión (Vitest, 29) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura | `pnpm test` |
 | Unitarias del componente nativo (Deno, 12) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging* | `deno task test` |
-| Extremo a extremo (Playwright, 13 + 2 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Extremo a extremo (Playwright, 15 + 2 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (diagnóstico HTTP 403), lista cifrada en formato propio (diagnóstico sin descarga), DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`) y paso de un HLS grande al componente nativo (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:

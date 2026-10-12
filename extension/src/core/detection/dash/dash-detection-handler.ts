@@ -15,10 +15,13 @@ import { logger } from "../../utils/logger";
 import { extractThumbnail } from "../thumbnail-utils";
 import { isLive } from "../../parsers/mpd-parser";
 import { detectDashDrm } from "../../utils/drm-utils";
+import { type DetectionFailure, describeBody, redactUrl, statusFromError } from "../detection-failure";
 import { DEFAULT_DETECTION_CACHE_SIZE } from "../../../shared/constants";
 
 export interface DashDetectionHandlerOptions {
   onVideoDetected?: (video: VideoMetadata) => void;
+  /** Called when a manifest seen on the network cannot be read */
+  onDetectionFailed?: (failure: DetectionFailure) => void;
   /** Max distinct URL path keys tracked per page (default: 500) */
   detectionCacheSize?: number;
 }
@@ -28,11 +31,13 @@ export interface DashDetectionHandlerOptions {
  */
 export class DashDetectionHandler {
   private onVideoDetected?: (video: VideoMetadata) => void;
+  private onDetectionFailed?: (failure: DetectionFailure) => void;
   private seenPathKeys: Set<string> = new Set();
   private readonly maxSeenPathKeys: number;
 
   constructor(options: DashDetectionHandlerOptions = {}) {
     this.onVideoDetected = options.onVideoDetected;
+    this.onDetectionFailed = options.onDetectionFailed;
     this.maxSeenPathKeys = options.detectionCacheSize ?? DEFAULT_DETECTION_CACHE_SIZE;
   }
 
@@ -60,13 +65,29 @@ export class DashDetectionHandler {
 
     try {
       const mpdText = await fetchText(url, 1);
+      if (!/<(?:\w+:)?MPD[\s>]/i.test(mpdText.slice(0, 4096))) {
+        this.seenPathKeys.delete(pathKey);
+        const body = describeBody(mpdText);
+        logger.debug(`[video-down] Not a DASH manifest (${body}): ${redactUrl(url)}`);
+        this.onDetectionFailed?.({ url, format: VideoFormat.DASH, reason: "not-playlist", body, at: Date.now() });
+        return null;
+      }
       const metadata = this.extractMetadata(url, mpdText);
       if (metadata && this.onVideoDetected) {
         this.onVideoDetected(metadata);
       }
       return metadata;
     } catch (error) {
-      logger.error("[video-down] Failed to fetch DASH manifest:", error);
+      this.seenPathKeys.delete(pathKey);
+      const status = statusFromError(error);
+      logger.debug(`[video-down] Could not read DASH manifest ${redactUrl(url)}: ${status ?? String(error)}`);
+      this.onDetectionFailed?.({
+        url,
+        format: VideoFormat.DASH,
+        reason: status ? "http" : "network",
+        ...(status ? { status } : {}),
+        at: Date.now(),
+      });
       return null;
     }
   }
