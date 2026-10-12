@@ -1,0 +1,37 @@
+{
+  "name": "video-down-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Extensión de Chrome que detecta vídeos en la página y permite descargarlos en la resolución elegida.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "build": "node scripts/build.mjs --mode production",
+    "dev": "node scripts/build.mjs --mode development --watch",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "fixtures": "node e2e/fixtures/make-fixtures.mjs"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "@ffmpeg/util": "0.12.2",
+    "m3u8-parser": "7.2.0",
+    "mpd-parser": "1.3.1",
+    "url-toolkit": "2.2.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/chrome": "0.3.1",
+    "@types/m3u8-parser": "7.2.5",
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}

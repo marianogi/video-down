@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "check": "deno check src/host.ts test/host_test.ts",
+    "test": "deno test --no-remote --no-npm test/"
+  },
+  "compilerOptions": {
+    "strict": true
+  },
+  "lock": false
+}

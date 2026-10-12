@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "short_name": "video-down",
+  "description": "__MSG_extDescription__",
+  "version": "0.1.0",
+  "default_locale": "en",
+  "minimum_chrome_version": "116",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA43Mk4vZXLsm80WSTMgOj1j/dRbRthEiE64FmUiybZZA07HScLw4fwMZ8+GL3wX/UIb2bwt2crYfGXH0uOPwOq4z1PIpYnYwgc3onejsg78n9iwxFslEoNqiF31RE4Luwvgl91dNGtW3haO2lr/eDxlhuQ1CT0/7/VIuOrGybOVCaKZaRczCZYQ5l2BV92frP1zh1FlLRvCaYvQ/PtySiBF0ImCAVErr/qw34+FjR1jJU/tc3n9S+UlVpICwAedabaEAJh9Q9b8Lal54TVfzuQiEtEeKbDLYPOGaWa4z3Ensc1fNNQhi0PxI2mS2uXqiBMog5wAmsuM9bB+q5Gwlw1wIDAQAB",
+  "permissions": [
+    "declarativeNetRequest",
+    "webRequest",
+    "unlimitedStorage",
+    "storage",
+    "downloads",
+    "notifications",
+    "offscreen",
+    "nativeMessaging"
+  ],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "video-down",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["main-world.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true
+    }
+  ],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  }
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>video-down</title>
+  <link rel="stylesheet" href="../ui/ui.css">
+  <link rel="stylesheet" href="./popup.css">
+  <script type="module" src="./popup.ts"></script>
+</head>
+<body>
+  <header class="top">
+    <h1>video-down</h1>
+    <span id="native" class="chip" role="status"></span>
+  </header>
+
+  <main>
+    <h2 data-i18n="popupDownloads"></h2>
+    <p id="empty" class="muted" data-i18n="popupEmpty" hidden></p>
+    <ul id="list" class="list"></ul>
+  </main>
+
+  <footer class="bottom">
+    <button id="clear" class="btn secondary" type="button" data-i18n="popupClear"></button>
+    <button id="options" class="btn secondary" type="button" data-i18n="popupOptions"></button>
+  </footer>
+</body>
+</html>

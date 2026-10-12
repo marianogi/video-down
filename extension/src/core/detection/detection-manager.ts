@@ -1,0 +1,149 @@
+/**
+ * Main detection manager - orchestrates video detection
+ *
+ * This manager serves as the central coordinator for video detection across different formats.
+ * It routes detection requests to format-specific handlers (direct, HLS) and manages the
+ * overall detection lifecycle.
+ *
+ * Key features:
+ * - Routes network requests to appropriate detection handlers based on URL format
+ * - Initializes DOM observers for direct video detection
+ * - Coordinates between direct and HLS detection handlers
+ * - Provides unified callbacks for video detection and removal events
+ *
+ * Detection process:
+ * 1. Network requests are intercepted and analyzed for video format
+ * 2. Requests are routed to format-specific handlers (direct or HLS)
+ * 3. DOM observers monitor for dynamically added video elements
+ * 4. Detected videos trigger callbacks with metadata
+ *
+ * @module DetectionManager
+ */
+
+import { VideoMetadata, VideoFormat } from "../types";
+import { logger } from "../utils/logger";
+import { detectFormatFromUrl } from "../utils/url-utils";
+import { DirectDetectionHandler } from "./direct/direct-detection-handler";
+import { HlsDetectionHandler } from "./hls/hls-detection-handler";
+import { DashDetectionHandler } from "./dash/dash-detection-handler";
+
+/** Configuration options for DetectionManager */
+export interface DetectionManagerOptions {
+  /** Optional callback for detected videos */
+  onVideoDetected?: (video: VideoMetadata) => void;
+  /** Optional callback for removed videos */
+  onVideoRemoved?: (url: string) => void;
+  /** Max distinct URL path keys tracked per page (default: 500) */
+  detectionCacheSize?: number;
+  /** Max master playlists held in memory by HLS handler (default: 50) */
+  masterPlaylistCacheSize?: number;
+}
+
+/**
+ * Main detection manager that orchestrates video detection
+ * Routes requests to format-specific handlers and manages detection lifecycle
+ */
+export class DetectionManager {
+  private onVideoDetected?: (video: VideoMetadata) => void;
+  private onVideoRemoved?: (url: string) => void;
+  public readonly directHandler: DirectDetectionHandler;
+  private hlsHandler: HlsDetectionHandler;
+  private dashHandler: DashDetectionHandler;
+
+  /**
+   * Create a new DetectionManager instance
+   * @param options - Configuration options
+   */
+  constructor(options: DetectionManagerOptions = {}) {
+    this.onVideoDetected = options.onVideoDetected;
+    this.onVideoRemoved = options.onVideoRemoved;
+    this.directHandler = new DirectDetectionHandler({
+      onVideoDetected: (video) => this.handleVideoDetected(video),
+    });
+    this.hlsHandler = new HlsDetectionHandler({
+      onVideoDetected: (video) => this.handleVideoDetected(video),
+      onVideoRemoved: (url) => this.handleVideoRemoved(url),
+      detectionCacheSize: options.detectionCacheSize,
+      masterPlaylistCacheSize: options.masterPlaylistCacheSize,
+    });
+    this.dashHandler = new DashDetectionHandler({
+      onVideoDetected: (video) => this.handleVideoDetected(video),
+      detectionCacheSize: options.detectionCacheSize,
+    });
+  }
+
+  /**
+   * Detect videos from network request
+   * Routes to format-specific handler based on URL format
+   */
+  handleNetworkRequest(url: string, formatHint?: VideoFormat): void {
+    const fromUrl = detectFormatFromUrl(url);
+    // The service worker passes a hint when it recognised a manifest by its
+    // Content-Type, so extension-less manifests (".../playlist?id=1") still work.
+    const format = fromUrl === VideoFormat.UNKNOWN && formatHint ? formatHint : fromUrl;
+    const force = fromUrl === VideoFormat.UNKNOWN && !!formatHint;
+
+    switch (format) {
+      case VideoFormat.DIRECT:
+        logger.debug("[video-down] Direct video detected", { url });
+        this.directHandler.handleNetworkRequest(url);
+        break;
+
+      case VideoFormat.HLS:
+        logger.debug("[video-down] HLS video detected", { url });
+        this.hlsHandler.handleNetworkRequest(url, force);
+        break;
+
+      case VideoFormat.DASH:
+        logger.debug("[video-down] DASH video detected", { url });
+        this.dashHandler.handleNetworkRequest(url, force);
+        break;
+
+      default:
+        // Reject unknown formats - don't process them
+        logger.debug("[video-down] Unknown format detected", { url });
+        break;
+    }
+  }
+
+  /**
+   * Initialize all detection mechanisms
+   * Sets up DOM observer and performs initial scan
+   */
+  init(): void {
+    // Set up DOM observer (for direct video detection)
+    this.directHandler.setupDOMObserver();
+
+    // Perform initial scan (for direct video detection)
+    this.directHandler.scanDOMForVideos();
+  }
+
+  /**
+   * Clean up all detection resources to prevent memory leaks
+   */
+  destroy(): void {
+    this.directHandler.destroy();
+    this.hlsHandler.destroy();
+    this.dashHandler.destroy();
+  }
+
+  /**
+   * Handle detected video
+   * @private
+   */
+  private handleVideoDetected(video: VideoMetadata): void {
+    if (this.onVideoDetected) {
+      this.onVideoDetected(video);
+    }
+  }
+
+  /**
+   * Handle video removal
+   * @private
+   */
+  private handleVideoRemoved(url: string): void {
+    if (this.onVideoRemoved) {
+      this.onVideoRemoved(url);
+    }
+  }
+}

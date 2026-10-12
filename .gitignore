@@ -1,0 +1,16 @@
+# dependencias y salidas de compilación
+node_modules/
+extension/dist/
+release/
+# herramientas locales (Deno de desarrollo) y claves privadas
+.tools/
+.secrets/
+# pruebas
+extension/test-results/
+extension/playwright-report/
+extension/e2e/fixtures/media/
+extension/e2e/.profile/
+# sistema
+.DS_Store
+Thumbs.db
+*.log

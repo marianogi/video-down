@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>video-down</title>
+  <link rel="stylesheet" href="../ui/ui.css">
+  <link rel="stylesheet" href="./options.css">
+  <script type="module" src="./options.ts"></script>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>video-down</h1>
+      <p class="muted" data-i18n="extDescription"></p>
+    </header>
+
+    <section id="welcome" class="card" aria-labelledby="welcome-h">
+      <h2 id="welcome-h" data-i18n="optHowTitle"></h2>
+      <ol class="steps">
+        <li data-i18n="optHow1"></li>
+        <li data-i18n="optHow2"></li>
+        <li data-i18n="optHow3"></li>
+      </ol>
+      <p class="muted" data-i18n="optHowRoutes"></p>
+    </section>
+
+    <section id="native" class="card" aria-labelledby="native-h">
+      <div class="row">
+        <h2 id="native-h" data-i18n="optNativeTitle"></h2>
+        <span id="native-chip" class="chip" role="status"></span>
+      </div>
+      <p data-i18n="optNativeWhy"></p>
+      <dl id="native-details" class="details" hidden>
+        <dt data-i18n="optYtdlpVersion"></dt><dd id="ytdlp-version" class="mono"></dd>
+        <dt data-i18n="optHostVersion"></dt><dd id="host-version" class="mono"></dd>
+        <dt>ffmpeg</dt><dd id="ffmpeg-state"></dd>
+        <dt>Deno</dt><dd id="deno-state"></dd>
+        <dt data-i18n="optSaveFolder"></dt><dd id="download-dir" class="mono"></dd>
+      </dl>
+      <div class="actions">
+        <button id="native-check" class="btn secondary" type="button" data-i18n="optCheckAgain"></button>
+        <button id="native-update" class="btn secondary" type="button" data-i18n="optUpdateYtdlp" hidden></button>
+      </div>
+      <p id="native-message" class="muted" aria-live="polite"></p>
+
+      <div id="install" class="install">
+        <h3 data-i18n="optInstallTitle"></h3>
+        <div id="install-win" hidden>
+          <ol class="steps">
+            <li data-i18n="optWin1"></li>
+            <li data-i18n="optWin2"></li>
+            <li data-i18n="optWin3"></li>
+          </ol>
+        </div>
+        <div id="install-mac" hidden>
+          <ol class="steps">
+            <li data-i18n="optMac1"></li>
+            <li data-i18n="optMac2"></li>
+            <li data-i18n="optMac3"></li>
+          </ol>
+        </div>
+        <p class="muted"><span data-i18n="optExtensionId"></span> <code id="ext-id"></code></p>
+      </div>
+    </section>
+
+    <section id="settings" class="card" aria-labelledby="settings-h">
+      <h2 id="settings-h" data-i18n="optSettingsTitle"></h2>
+      <form id="form" class="form">
+        <label class="check"><input type="checkbox" name="askWhereToSave"> <span data-i18n="optAskWhere"></span></label>
+        <label class="check"><input type="checkbox" name="showOverlay"> <span data-i18n="optShowOverlay"></span></label>
+        <label class="check"><input type="checkbox" name="notifyOnCompletion"> <span data-i18n="optNotify"></span></label>
+        <label class="check"><input type="checkbox" name="historyEnabled"> <span data-i18n="optHistory"></span></label>
+        <label class="field">
+          <span data-i18n="optMinWidth"></span>
+          <input type="number" name="minVideoWidth" min="40" max="2000" step="10" inputmode="numeric">
+        </label>
+        <label class="field">
+          <span data-i18n="optConcurrency"></span>
+          <input type="number" name="maxConcurrent" min="1" max="12" step="1" inputmode="numeric">
+        </label>
+        <label class="field">
+          <span data-i18n="optNativeAbove"></span>
+          <input type="number" name="preferNativeAboveMb" min="100" max="100000" step="100" inputmode="numeric">
+        </label>
+        <div class="actions">
+          <button class="btn" type="submit" data-i18n="optSave"></button>
+          <span id="saved" class="ok" aria-live="polite"></span>
+        </div>
+      </form>
+    </section>
+
+    <section id="legal" class="card" aria-labelledby="legal-h">
+      <h2 id="legal-h" data-i18n="optLegalTitle"></h2>
+      <p data-i18n="optLegal1"></p>
+      <p data-i18n="optLegal2"></p>
+      <p class="muted" data-i18n="optCredits"></p>
+    </section>
+  </div>
+</body>
+</html>

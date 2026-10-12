@@ -1,0 +1,10 @@
+# Saltos de línea fijos: los scripts de macOS deben llevar LF y los de Windows CRLF,
+# sea cual sea la configuración de git de quien clone el repositorio.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+*.png binary
+*.ico binary
+*.wasm binary
