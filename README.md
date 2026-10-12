@@ -453,17 +453,17 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (12/10/2026)
+### Estado de verificación (versión 0.1.1, 12/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
 | Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso, dos veces seguidas (la segunda no vuelve a descargar Deno ni ffmpeg) | Correcto |
 | Windows 11 | Componente nativo hablando como lo hace Chrome: `ping`, rechazo de una URL `file://`, consulta y descarga de YouTube (H.264 + AAC verificados con `ffprobe`), cancelación sin procesos ni temporales sueltos | Correcto |
-| Windows 11 | Las 12 pruebas de extremo a extremo, incluidas YouTube y el paso de un HLS grande a yt-dlp | 12 de 12 |
+| Windows 11 | Las 15 pruebas de extremo a extremo, incluidas YouTube y el paso de un HLS grande a yt-dlp | 15 de 15 |
 | macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip descomprimido con `unzip`, permisos de ejecución conservados, `install.sh`, autocomprobación del componente nativo, desinstalación | Correcto |
-| macOS 14, GitHub Actions | Pruebas de extremo a extremo, incluido el paso de un HLS grande a yt-dlp con el componente nativo de Mac | 11 de 11 (YouTube no se ejecuta en GitHub) |
+| macOS 14, GitHub Actions | Pruebas de extremo a extremo, incluidos reproductores incrustados con `Referer` obligatorio y el paso de un HLS grande a yt-dlp con el componente nativo de Mac | 14 de 14 (YouTube no se ejecuta en GitHub) |
 | Windows Server 2025, máquina limpia de GitHub Actions | `.exe` en modo silencioso, verificación SHA-256 de Deno, ffmpeg y yt-dlp, autocomprobación | Correcto |
-| Windows Server 2025, GitHub Actions | Pruebas de extremo a extremo, incluido el paso a yt-dlp | 11 de 11 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, GitHub Actions | Pruebas de extremo a extremo, incluidos reproductores incrustados con `Referer` obligatorio y el paso a yt-dlp | 14 de 14 (YouTube no se ejecuta en GitHub) |
 
 La verificación en máquinas limpias encontró y corrigió tres fallos que no se veían en el equipo de
 desarrollo: el instalador de Windows perdía `Get-FileHash` al lanzarse desde PowerShell 7, su aviso de
