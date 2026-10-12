@@ -117,10 +117,14 @@ jobs:
         timeout-minutes: 15
         run: |
           $exe = Get-ChildItem release/video-down-setup-*.exe | Select-Object -First 1
-          Start-Process -Wait -FilePath $exe.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=install.log'
-          Get-Content install.log -Tail 5
+          # Wait for the installer process only (Start-Process -Wait would also wait for descendants).
+          $p = Start-Process -PassThru -FilePath $exe.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=install.log'
+          $finished = $p.WaitForExit(600000)
           $app = Join-Path $env:LOCALAPPDATA 'video-down'
-          Get-Content (Join-Path $app 'logs\install.log') -ErrorAction SilentlyContinue
+          Write-Host '--- Inno Setup log (tail) ---'; Get-Content install.log -Tail 15 -ErrorAction SilentlyContinue
+          Write-Host '--- install.ps1 log ---'; Get-Content (Join-Path $app 'logs\install.log') -ErrorAction SilentlyContinue
+          Write-Host '--- processes ---'; Get-Process | Where-Object { $_.ProcessName -match 'powershell|deno|yt-dlp|setup|cmd' } | Format-Table Id, ProcessName, StartTime -AutoSize
+          if (-not $finished) { throw 'installer did not finish in 10 minutes' }
           Get-ChildItem $app, (Join-Path $app 'bin')
           & cmd.exe /d /c "`"$app\video-down-host.cmd`" --self-check"
           if ($LASTEXITCODE -ne 0) { throw 'self-check failed' }
