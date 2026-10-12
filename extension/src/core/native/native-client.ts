@@ -114,10 +114,32 @@ function asError(m: ErrorResponse): NativeHostError {
 // ---------------------------------------------------------------- status
 
 let statusCache: { at: number; value: { installed: boolean; pong?: PongResponse; error?: string } } | null = null;
+/** A positive answer is trusted for a minute; a negative one only briefly, because the usual
+ * cause is a slow first start (antivirus scanning Deno, a busy machine), not a missing install. */
 const STATUS_TTL_MS = 60_000;
+const NEGATIVE_TTL_MS = 5_000;
+/** Deno's first start can take several seconds on slow or busy machines. */
+const PING_TIMEOUT_MS = 20_000;
+
+function statusFresh(): boolean {
+  if (!statusCache) return false;
+  const ttl = statusCache.value.installed ? STATUS_TTL_MS : NEGATIVE_TTL_MS;
+  return Date.now() - statusCache.at < ttl;
+}
+
+let pendingPing: Promise<{ installed: boolean; pong?: PongResponse; error?: string }> | null = null;
 
 export async function nativeStatus(force = false): Promise<{ installed: boolean; pong?: PongResponse; error?: string }> {
-  if (!force && statusCache && Date.now() - statusCache.at < STATUS_TTL_MS) return statusCache.value;
+  if (!force && statusFresh()) return statusCache!.value;
+  // Concurrent callers share one ping instead of starting several host processes.
+  if (pendingPing) return pendingPing;
+  pendingPing = pingHost().finally(() => {
+    pendingPing = null;
+  });
+  return pendingPing;
+}
+
+async function pingHost(): Promise<{ installed: boolean; pong?: PongResponse; error?: string }> {
   let pong: PongResponse | undefined;
   let value: { installed: boolean; pong?: PongResponse; error?: string };
   try {
@@ -131,7 +153,7 @@ export async function nativeStatus(force = false): Promise<{ installed: boolean;
         if (m.type === "error") throw asError(m);
         return "continue";
       },
-      8000,
+      PING_TIMEOUT_MS,
     ).finished;
     value = pong?.ytdlpVersion ? { installed: true, pong } : { installed: false, pong, error: "yt-dlp missing" };
   } catch (err) {
@@ -143,7 +165,7 @@ export async function nativeStatus(force = false): Promise<{ installed: boolean;
 
 /** Last known status without spawning the host (null if never checked or expired). */
 export function cachedNativeStatus(): { installed: boolean } | null {
-  return statusCache && Date.now() - statusCache.at < STATUS_TTL_MS ? statusCache.value : null;
+  return statusFresh() ? statusCache!.value : null;
 }
 
 export function invalidateNativeStatus(): void {

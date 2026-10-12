@@ -7,7 +7,18 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
-## 0.1.3 (2026-10-12)
+## 0.1.4 (2026-10-12)
+
+- La comprobación del componente nativo espera hasta 20 s (el primer arranque de Deno puede ser
+  lento con el antivirus o en equipos cargados), comparte una sola comprobación entre peticiones
+  simultáneas, y un «no instalado» solo se recuerda 5 s en lugar de un minuto. Antes, un arranque
+  lento hacía que un vídeo grande se descargase en el navegador en vez de pasar a yt-dlp.
+- Incluye todo lo de la 0.1.3.
+
+## 0.1.3 (2026-10-12) — no publicada
+
+Se instaló solo en el equipo de desarrollo; la verificación en Windows limpio encontró el fallo
+corregido en la 0.1.4.
 
 - Disciplina de versiones: un único número (en `extension/package.json`) para la extensión, el
   componente nativo y los instaladores. El componente nativo ya no dice «0.1.0» con otra versión

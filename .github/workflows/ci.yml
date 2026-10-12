@@ -144,4 +144,6 @@ jobs:
         if: failure()
         with:
           name: windows-test-results
-          path: extension/test-results
+          path: |
+            extension/test-results
+            ~/AppData/Local/video-down/logs
