@@ -363,6 +363,7 @@ async function handleDownload(req: DownloadRequest): Promise<void> {
   }
 
   const config = readConfig();
+  cleanStaleTmp();
   const jobId = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
   const tmp = join(TMP_DIR, jobId);
   Deno.mkdirSync(tmp, { recursive: true });
@@ -437,7 +438,7 @@ async function handleDownload(req: DownloadRequest): Promise<void> {
     });
   });
 
-  removeTmp();
+  await removeTmp();
   if (code !== 0 || !filepath) {
     fail(req.id, "ytdlp-failed", summariseError(stderr));
     return;
@@ -455,14 +456,52 @@ async function handleUpdate(id: string): Promise<void> {
   });
 }
 
-function removeTmp(): void {
-  if (!activeTmpDir) return;
-  try {
-    Deno.removeSync(activeTmpDir, { recursive: true });
-  } catch {
-    // already gone
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * On Windows a killed yt-dlp keeps its files open for a moment, so deleting
+ * its temporary folder right away fails. Retry for a few seconds.
+ */
+async function removeTmp(): Promise<void> {
+  const dir = activeTmpDir;
+  if (!dir) return;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      Deno.removeSync(dir, { recursive: true });
+      break;
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) break;
+      if (attempt === 19) log("could not remove", dir, String(err));
+      await sleep(250);
+    }
   }
-  activeTmpDir = null;
+  if (activeTmpDir === dir) activeTmpDir = null;
+}
+
+/** Remove job folders left by crashes: nothing inside them was written for 30 minutes. */
+function cleanStaleTmp(): void {
+  const now = Date.now();
+  const newest = (dir: string): number => {
+    let latest = Deno.statSync(dir).mtime?.getTime() ?? 0;
+    for (const e of Deno.readDirSync(dir)) {
+      const p = join(dir, e.name);
+      latest = Math.max(latest, e.isDirectory ? newest(p) : (Deno.statSync(p).mtime?.getTime() ?? 0));
+    }
+    return latest;
+  };
+  try {
+    for (const entry of Deno.readDirSync(TMP_DIR)) {
+      if (!entry.isDirectory) continue;
+      const dir = join(TMP_DIR, entry.name);
+      try {
+        if (now - newest(dir) > 30 * 60_000) Deno.removeSync(dir, { recursive: true });
+      } catch {
+        // in use or already gone
+      }
+    }
+  } catch {
+    // TMP_DIR missing
+  }
 }
 
 async function dispatch(req: HostRequest): Promise<void> {
@@ -518,11 +557,31 @@ async function main(): Promise<void> {
     killTree(activeChild);
   }
   await Promise.allSettled(running);
-  removeTmp();
+  await removeTmp();
   log("exit");
 }
 
+/** Used by the installers: prints the state of every binary and exits non-zero if one is missing. */
+async function selfCheck(): Promise<number> {
+  let downloadDir = "";
+  try {
+    downloadDir = readConfig().downloadDir;
+  } catch {
+    // reported as empty
+  }
+  const status = {
+    hostVersion: HOST_VERSION,
+    ytdlpVersion: await ytdlpVersion(),
+    ffmpeg: exists(FFMPEG),
+    deno: exists(DENO),
+    downloadDir,
+  };
+  console.log(JSON.stringify(status));
+  return status.ytdlpVersion && status.ffmpeg && status.deno && downloadDir ? 0 : 1;
+}
+
 if (import.meta.main) {
+  if (Deno.args.includes("--self-check")) Deno.exit(await selfCheck());
   await main();
   Deno.exit(0);
 }

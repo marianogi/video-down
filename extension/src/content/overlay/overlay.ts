@@ -25,6 +25,8 @@ import { DownloadStage, VideoFormat, type VideoMetadata, type DownloadProgress }
 import type { BrowserVariant } from "../../core/variants";
 import type { Variant as NativeVariant } from "@host/protocol";
 
+declare const __VD_SHADOW_MODE__: ShadowRootMode;
+
 export interface OverlayDeps {
   /** Every media item detected in this frame so far */
   allMedia(): VideoMetadata[];
@@ -119,7 +121,8 @@ export class Overlay {
 
   constructor(private readonly deps: OverlayDeps) {
     this.host = document.createElement("video-down-overlay");
-    this.root = this.host.attachShadow({ mode: "closed" });
+    // Closed in production so pages cannot reach the UI; the e2e build opens it for Playwright.
+    this.root = this.host.attachShadow({ mode: __VD_SHADOW_MODE__ });
     const style = document.createElement("style");
     style.textContent = OVERLAY_CSS;
     this.root.appendChild(style);
@@ -173,7 +176,12 @@ export class Overlay {
 
   /** Called when the media list of the frame changes. */
   onMediaChanged(): void {
-    if (this.openKey && this.lastRoute?.kind === "pending") {
+    // A manifest that arrives late can turn "waiting" or "unknown stream" into a browser download.
+    const r = this.lastRoute;
+    const reroute =
+      r?.kind === "pending" ||
+      ((r?.kind === "native" || r?.kind === "need-native") && r.reason === "unknown-stream");
+    if (this.openKey && reroute) {
       const tr = this.tracked.get(this.openKey);
       if (tr) void this.renderRoute(tr);
     }
@@ -442,15 +450,21 @@ export class Overlay {
     if (this.pendingRetry) clearTimeout(this.pendingRetry);
     if (!this.lastRoute) this.renderLoading(t("searching"));
 
-    const nativeAvailable = await this.deps.isNativeAvailable().catch(() => false);
-    if (token !== this.renderToken) return;
-
-    const r = route({
+    // Route first as if the native component were missing: direct files, HLS and DASH
+    // never wait for it. Ask for its status (it may start a process) only when needed.
+    const input = {
       pageUrl: location.href,
       video: readFacts(tr.video, tr.loadStartedAt, tr.firstSeenAt),
       media: this.mediaFor(tr),
-      nativeAvailable,
-    });
+      nativeAvailable: false,
+    };
+    let r = route(input);
+    let nativeAvailable = false;
+    if (r.kind === "need-native") {
+      nativeAvailable = await this.deps.isNativeAvailable().catch(() => false);
+      if (token !== this.renderToken) return;
+      if (nativeAvailable) r = route({ ...input, nativeAvailable });
+    }
     this.lastRoute = r;
 
     switch (r.kind) {
@@ -599,13 +613,15 @@ export class Overlay {
     }
     if (token !== this.renderToken) return;
     if (!reply.success || !reply.variants?.length) {
+      const canFallback = nativeAvailable || (await this.deps.isNativeAvailable().catch(() => false));
+      if (token !== this.renderToken) return;
       this.renderError(
         reply.error || t("noVariants"),
         () => {
           this.cache.delete(`manifest:${media.url}`);
           void this.renderRoute(tr);
         },
-        nativeAvailable ? () => void this.renderNative(tr, media.url, location.href, ++this.renderToken) : undefined,
+        canFallback ? () => void this.renderNative(tr, media.url, location.href, ++this.renderToken) : undefined,
       );
       return;
     }

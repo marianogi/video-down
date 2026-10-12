@@ -78,10 +78,11 @@ export class DetectionManager {
    */
   handleNetworkRequest(url: string, formatHint?: VideoFormat): void {
     const fromUrl = detectFormatFromUrl(url);
-    // The service worker passes a hint when it recognised a manifest by its
-    // Content-Type, so extension-less manifests (".../playlist?id=1") still work.
-    const format = fromUrl === VideoFormat.UNKNOWN && formatHint ? formatHint : fromUrl;
-    const force = fromUrl === VideoFormat.UNKNOWN && !!formatHint;
+    // The service worker only passes a hint when the response's Content-Type says
+    // HLS/DASH and the URL does not. That header is authoritative: the URL
+    // heuristics would otherwise read ".../media/playlist" as a direct file.
+    const format = formatHint ?? fromUrl;
+    const force = !!formatHint && formatHint !== fromUrl;
 
     switch (format) {
       case VideoFormat.DIRECT:

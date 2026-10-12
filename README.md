@@ -269,7 +269,70 @@ todos usan el menú de la barra de Chrome.
 
 ## Instalación en Windows y en macOS
 
-> En construcción: los instaladores se están terminando. Esta sección se completará con ellos.
+Hay **un instalador por sistema**. Los dos instalan solo para el usuario actual, sin permisos de
+administrador, y descargan Deno, ffmpeg y yt-dlp en el momento de instalar.
+
+| Sistema | Paquete | Dónde instala |
+|---|---|---|
+| Windows 10/11 (x64) | `video-down-setup-<versión>.exe` | `%LOCALAPPDATA%\video-down` |
+| macOS (Apple Silicon e Intel) | `video-down-<versión>-macos.zip` | `~/Library/Application Support/video-down` |
+
+### Windows
+
+1. Ejecuta `video-down-setup-<versión>.exe` y sigue el asistente. Es un instalador de Inno Setup y
+   aparece en «Configuración → Aplicaciones» para desinstalarlo.
+2. El asistente copia la extensión y el componente nativo, y abre una ventana de PowerShell que descarga
+   y verifica Deno 2.9.7, ffmpeg 9.0.2 y la última versión estable de yt-dlp.
+3. También registra el componente nativo para Chrome, Edge, Brave y Chromium, y comprueba que responde.
+4. Al terminar puede abrir `chrome://extensions` y la carpeta `%LOCALAPPDATA%\video-down\extension`.
+   Activa el **modo de desarrollador**, pulsa **«Cargar descomprimida»** y elige esa carpeta.
+5. En las opciones de video-down, pulsa «Comprobar de nuevo». Debe decir «Componente nativo activo».
+
+Sin el `.exe` también se puede instalar desde una copia del repositorio compilada, ejecutando
+`installer\windows\install.ps1` en PowerShell.
+
+### macOS
+
+1. Descomprime `video-down-<versión>-macos.zip` y haz doble clic en **«Instalar video-down.command»**.
+   - Si macOS lo bloquea por ser de un desarrollador no identificado: en macOS 14 o anterior, botón derecho
+     → Abrir. En macOS 15 o posterior: Ajustes del Sistema → Privacidad y seguridad → «Abrir igualmente».
+   - Alternativa sin Gatekeeper: en Terminal, `bash ` seguido de la ruta de `install.sh`.
+2. El instalador detecta si el Mac es Apple Silicon o Intel, descarga y verifica Deno, ffmpeg y yt-dlp,
+   registra el componente nativo para Chrome, Edge, Brave y Chromium, y comprueba que responde.
+3. Al terminar abre `chrome://extensions` y la carpeta de la extensión. Activa el modo de desarrollador,
+   pulsa «Cargar descomprimida» y elige `~/Library/Application Support/video-down/extension`. En el
+   selector, `Cmd+Mayús+G` permite pegar la ruta.
+4. En las opciones de video-down, pulsa «Comprobar de nuevo».
+
+Para desinstalar en Mac: doble clic en «Desinstalar video-down.command».
+
+### Qué deja instalado
+
+```
+video-down/
+├─ extension/                  La extensión que se carga en Chrome
+├─ native-host/src/            Código del componente nativo (Deno)
+├─ bin/                        deno, ffmpeg, ffprobe, yt-dlp (+ installed.json con las versiones)
+├─ video-down-host.cmd / .sh   Lanzador con los permisos de Deno
+├─ native-host-manifest.json   Manifiesto que Chrome lee para encontrar el lanzador
+├─ config.json                 Carpeta de descargas del componente nativo
+├─ state/ tmp/ logs/ cache/    Consultas recientes, temporales de yt-dlp, registro y caché
+└─ install / uninstall         Para reinstalar o actualizar sin el paquete original
+```
+
+Volver a ejecutar el instalador es seguro: no descarga otra vez lo que ya está en su versión y
+actualiza yt-dlp. yt-dlp también se puede actualizar desde las opciones de la extensión.
+
+### Generar los paquetes
+
+```bash
+cd extension && pnpm install --frozen-lockfile && cd ..
+node installer/build-release.mjs          # release/video-down-setup-<v>.exe y release/video-down-<v>-macos.zip
+node installer/build-release.mjs --skip-exe   # solo el paquete de Mac (no necesita Inno Setup)
+```
+
+El `.exe` necesita [Inno Setup 6](https://jrsoftware.org/isinfo.php). El paquete de Mac se genera
+desde cualquier sistema: el script escribe el `.zip` conservando los permisos de ejecución.
 
 ---
 
@@ -346,6 +409,8 @@ pnpm install --frozen-lockfile
 pnpm run build          # genera extension/dist
 pnpm run type-check
 pnpm test               # pruebas unitarias (Vitest)
+pnpm run fixtures       # genera los vídeos de prueba con ffmpeg (una vez)
+pnpm run test:e2e       # pruebas de extremo a extremo en Chromium con Playwright
 
 cd ../native-host
 deno task check
@@ -354,6 +419,21 @@ deno task test
 
 Para probar la extensión sin instalador: `chrome://extensions` → modo de desarrollador →
 «Cargar descomprimida» → carpeta `extension/dist`.
+
+### Pruebas
+
+| Conjunto | Qué cubre | Cómo se ejecuta |
+|---|---|---|
+| Unitarias de la extensión (Vitest, 26) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes | `pnpm test` |
+| Unitarias del componente nativo (Deno, 12) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging* | `deno task test` |
+| Extremo a extremo (Playwright, 10 + 2 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS con AES-128, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`) y paso de un HLS grande al componente nativo (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
+
+Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:
+la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo. La que se distribuye es cerrada.
+
+> En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
+> al comando o ejecútalo desde PowerShell.
 
 ---
 

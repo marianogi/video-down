@@ -14,3 +14,4 @@ extension/e2e/.profile/
 .DS_Store
 Thumbs.db
 *.log
+extension/dist-e2e/

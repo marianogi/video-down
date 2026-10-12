@@ -43,6 +43,7 @@ import {
   nativeDownload,
   nativeUpdate,
   invalidateNativeStatus,
+  cachedNativeStatus,
   NativeHostError,
 } from "./core/native/native-client";
 
@@ -574,15 +575,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MessageType.CONTENT_READY: {
       const origin = originOf(sender);
       const pending = origin ? (pendingByFrame.get(frameKey(origin.tabId, origin.frameId)) ?? []) : [];
-      return reply(
-        nativeStatus().then(
-          (s): ContentReadyReply => ({
-            frameId: origin?.frameId ?? 0,
-            pending: pending.map(({ url, formatHint }) => ({ url, ...(formatHint ? { formatHint } : {}) })),
-            nativeAvailable: s.installed,
-          }),
-        ),
-      );
+      // Answer at once: starting the native host takes seconds and must never delay detection.
+      const cached = cachedNativeStatus();
+      if (!cached) void nativeStatus();
+      const ready: ContentReadyReply = {
+        frameId: origin?.frameId ?? 0,
+        pending: pending.map(({ url, formatHint }) => ({ url, ...(formatHint ? { formatHint } : {}) })),
+        nativeAvailable: cached?.installed ?? false,
+      };
+      sendResponse(ready);
+      return false;
     }
     case MessageType.FETCH_RESOURCE:
       return reply(handleFetchResource(message.payload));

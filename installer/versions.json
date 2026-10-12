@@ -1,0 +1,49 @@
+{
+  "videodown": "0.1.0",
+  "hostName": "dev.marianogutierrez.videodown",
+  "extensionId": "hmniedmoneiciocknghpbdkhkmdcpgdf",
+  "deno": {
+    "version": "2.9.7",
+    "windows": {
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip",
+      "sha256": "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238"
+    },
+    "macosArm64": {
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-apple-darwin.zip",
+      "sha256": "5cd46d6268f6f78f5d88bdc7159d20bd44cdaa4b3303474839f87ec6fe7ae25c"
+    },
+    "macosX64": {
+      "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-apple-darwin.zip",
+      "sha256": "95daaff11c116a52ad54785e7914c8e9c9cdcaba793c5ed929c74ca2d8e6259a"
+    }
+  },
+  "ffmpeg": {
+    "version": "9.0.2",
+    "windows": {
+      "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+      "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
+    },
+    "macosArm64": {
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip",
+      "sha256": "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924"
+    },
+    "macosArm64Probe": {
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip",
+      "sha256": "fcbe839537485eaee7a7a8bc5cbc0f90d53617e80943e8a5b2e31cb851197ea6"
+    },
+    "macosX64": {
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip",
+      "sha256": "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4"
+    },
+    "macosX64Probe": {
+      "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffprobe.zip",
+      "sha256": "2322438ed2f6319a691291b247d09c69dcaa3a982460d1f269a7e1af335cfdfd"
+    }
+  },
+  "ytdlp": {
+    "comment": "Siempre la última versión estable; se verifica contra el SHA2-256SUMS de esa misma versión.",
+    "windows": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+    "macos": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos",
+    "sums": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS"
+  }
+}

@@ -14,10 +14,12 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const src = resolve(root, "src");
-const dist = resolve(root, "dist");
+const dist = resolve(root, process.argv.includes("--e2e") ? "dist-e2e" : "dist");
 const args = process.argv.slice(2);
 const mode = args.includes("--mode") ? args[args.indexOf("--mode") + 1] : "production";
 const watch = args.includes("--watch");
+// --e2e: same build with an open shadow root so Playwright can reach the overlay.
+const e2e = args.includes("--e2e");
 const production = mode === "production";
 
 const alias = {
@@ -30,7 +32,10 @@ const shared = {
   mode,
   logLevel: process.env.VD_LOG || "warn",
   resolve: { alias },
-  define: { "process.env.NODE_ENV": JSON.stringify(mode) },
+  define: {
+    "process.env.NODE_ENV": JSON.stringify(mode),
+    __VD_SHADOW_MODE__: JSON.stringify(e2e ? "open" : "closed"),
+  },
 };
 
 rmSync(dist, { recursive: true, force: true });

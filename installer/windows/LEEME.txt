@@ -1,0 +1,25 @@
+video-down para Windows
+=======================
+
+El instalador ya ha dejado listo el componente nativo (yt-dlp, ffmpeg y Deno)
+y la extensión en esta carpeta:
+
+    %LOCALAPPDATA%\video-down\extension
+
+Falta un único paso, y solo la primera vez. Chrome no permite que ningún
+programa instale por sí solo una extensión que no venga de su tienda:
+
+  1. Abre chrome://extensions (el instalador puede abrirlo por ti al terminar).
+  2. Activa «Modo de desarrollador», arriba a la derecha.
+  3. Pulsa «Cargar descomprimida» y elige la carpeta de arriba.
+     En el selector puedes pegar la ruta tal cual en la barra de dirección.
+  4. Abre las opciones de video-down (botón de la barra de Chrome → Opciones)
+     y pulsa «Comprobar de nuevo». Debe decir «Componente nativo activo».
+
+Uso: en cualquier vídeo aparece un icono en su esquina superior izquierda.
+Púlsalo y elige la resolución.
+
+Para desinstalar: Configuración de Windows → Aplicaciones → video-down,
+y quita también la extensión en chrome://extensions.
+
+Más información: https://github.com/marianogi/video-down

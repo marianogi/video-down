@@ -84,7 +84,8 @@ async function main(): Promise<void> {
       else resolve(r);
     });
   });
-  if (ready) nativeCache = { value: ready.nativeAvailable, at: Date.now() };
+  // Only trust a positive answer: "false" may just mean "not checked yet".
+  if (ready?.nativeAvailable) nativeCache = { value: true, at: Date.now() };
   startDetection(ready?.pending ?? []);
 
   if (settings?.showOverlay !== false) {

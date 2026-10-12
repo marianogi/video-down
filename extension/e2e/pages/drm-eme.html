@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>EME ClearKey</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>EME ClearKey</h1>
+<video controls muted></video>
+<script type="module">
+  const video = document.querySelector("video");
+  video.src = URL.createObjectURL(new MediaSource());
+  const access = await navigator.requestMediaKeySystemAccess("org.w3.clearkey", [{
+    initDataTypes: ["cenc"],
+    videoCapabilities: [{ contentType: "video/mp4; codecs=\"avc1.42E01E\"" }],
+  }]);
+  const keys = await access.createMediaKeys();
+  await video.setMediaKeys(keys);
+  document.title = "EME ready";
+</script>
+</body></html>

@@ -9,9 +9,9 @@
   "scripts": {
     "build": "node scripts/build.mjs --mode production",
     "dev": "node scripts/build.mjs --mode development --watch",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tests",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/build.mjs --mode production --e2e && playwright test",
     "fixtures": "node e2e/fixtures/make-fixtures.mjs"
   },
   "dependencies": {

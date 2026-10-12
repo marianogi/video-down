@@ -141,6 +141,11 @@ export async function nativeStatus(force = false): Promise<{ installed: boolean;
   return value;
 }
 
+/** Last known status without spawning the host (null if never checked or expired). */
+export function cachedNativeStatus(): { installed: boolean } | null {
+  return statusCache && Date.now() - statusCache.at < STATUS_TTL_MS ? statusCache.value : null;
+}
+
 export function invalidateNativeStatus(): void {
   statusCache = null;
 }

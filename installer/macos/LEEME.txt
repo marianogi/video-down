@@ -1,0 +1,42 @@
+video-down para macOS
+=====================
+
+Instalación
+-----------
+
+1. Haz doble clic en «Instalar video-down.command».
+
+   Si macOS dice que no puede abrirlo porque es de un desarrollador no
+   identificado:
+     - macOS 14 o anterior: botón derecho sobre el fichero → Abrir → Abrir.
+     - macOS 15 o posterior: Ajustes del Sistema → Privacidad y seguridad →
+       «Abrir igualmente», junto al aviso de video-down.
+   También puedes abrir Terminal, escribir «bash », arrastrar install.sh
+   a la ventana y pulsar Intro.
+
+2. El instalador descarga y verifica Deno, ffmpeg y yt-dlp, y deja la
+   extensión en:
+
+       ~/Library/Application Support/video-down/extension
+
+3. Falta un único paso, y solo la primera vez. Chrome no permite que ningún
+   programa instale por sí solo una extensión que no venga de su tienda:
+     - En chrome://extensions activa «Modo de desarrollador».
+     - Pulsa «Cargar descomprimida» y elige la carpeta de arriba
+       (en el selector, Cmd+Mayús+G y pega la ruta).
+     - Abre las opciones de video-down y pulsa «Comprobar de nuevo».
+       Debe decir «Componente nativo activo».
+
+Uso
+---
+
+En cualquier vídeo aparece un icono en su esquina superior izquierda.
+Púlsalo y elige la resolución.
+
+Desinstalación
+--------------
+
+Doble clic en «Desinstalar video-down.command» y quita también la
+extensión en chrome://extensions.
+
+Más información: https://github.com/marianogi/video-down
