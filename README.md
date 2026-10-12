@@ -486,7 +486,7 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.1.2, 12/10/2026)
+### Estado de verificación (versión 0.1.4, 12/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
