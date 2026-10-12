@@ -7,8 +7,8 @@
 
 import { test as base, expect, chromium, type BrowserContext, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
@@ -41,6 +41,18 @@ const test = base.extend<Fixtures, WorkerFixtures>({
   extContext: [
     async ({ downloads }, use) => {
       const profile = mkdtempSync(join(tmpdir(), "video-down-e2e-profile-"));
+      // On macOS and Linux, Chromium looks for native messaging hosts inside its user data
+      // directory. A real Chrome profile is where the installer registers it; this temporary
+      // profile is not, so copy the manifest in. (Windows uses the registry, so nothing to do.)
+      const hostFile = "dev.marianogutierrez.videodown.json";
+      const installed = [
+        join(homedir(), "Library/Application Support/Chromium/NativeMessagingHosts", hostFile),
+        join(homedir(), ".config/chromium/NativeMessagingHosts", hostFile),
+      ].find((p) => existsSync(p));
+      if (installed) {
+        mkdirSync(join(profile, "NativeMessagingHosts"), { recursive: true });
+        copyFileSync(installed, join(profile, "NativeMessagingHosts", hostFile));
+      }
       const context = await chromium.launchPersistentContext(profile, {
         channel: "chromium",
         headless: true,

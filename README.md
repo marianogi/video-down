@@ -435,6 +435,20 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
+### Estado de verificación (12/10/2026)
+
+| Dónde | Qué se comprobó | Resultado |
+|---|---|---|
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso, dos veces seguidas (la segunda no vuelve a descargar Deno ni ffmpeg) | Correcto |
+| Windows 11 | Componente nativo hablando como lo hace Chrome: `ping`, rechazo de una URL `file://`, consulta y descarga de YouTube (H.264 + AAC verificados con `ffprobe`), cancelación sin procesos ni temporales sueltos | Correcto |
+| Windows 11 | Las 12 pruebas de extremo a extremo, incluidas YouTube y el paso de un HLS grande a yt-dlp | 12 de 12 |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip descomprimido con `unzip`, permisos de ejecución conservados, `install.sh`, autocomprobación del componente nativo | Correcto |
+| macOS 14, GitHub Actions | Las 10 pruebas de extremo a extremo del motor del navegador | 10 de 10 |
+| Windows limpio, GitHub Actions | Instalación con el `.exe` y pruebas de extremo a extremo | Ver la pestaña *Actions* |
+
+Pendiente de probar a mano en un Mac real: el doble clic en «Instalar video-down.command» con
+Gatekeeper, y cargar la extensión en Google Chrome para Mac.
+
 ---
 
 ## Limitaciones conocidas
@@ -445,7 +459,11 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 - **No graba directos** en esta versión.
 - **No descarga contenido con DRM**, por decisión explícita.
 - **Paso manual al instalar:** cargar la extensión descomprimida, por la restricción de Chrome explicada arriba.
-- **Solo Google Chrome** en esta versión. Edge y Brave usan otra ubicación para el componente nativo.
+- **Navegadores:** pensada y probada para **Google Chrome**. Los instaladores registran también el
+  componente nativo para Edge, Brave y Chromium, que cargan la misma extensión, pero no se han probado a mano.
+- **Perfiles de Chrome en Mac:** el componente nativo se registra para la carpeta de datos estándar de
+  Chrome, que incluye todos sus perfiles. Si se arranca Chrome con otra carpeta de datos
+  (`--user-data-dir`), hay que copiar allí `NativeMessagingHosts/dev.marianogutierrez.videodown.json`.
 
 ---
 
