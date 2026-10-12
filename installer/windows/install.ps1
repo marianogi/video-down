@@ -156,8 +156,13 @@ try {
 
   # ------------------------------------------------------------ 5. configuración
   Step 'Configuración'
+  # Real Downloads folder (it can be moved to another drive). Read from the registry rather than
+  # through the Shell COM object, which can block in sessions without a desktop.
   $downloads = $null
-  try { $downloads = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path } catch { }
+  try {
+    $raw = (Get-ItemProperty -ErrorAction Stop -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders').'{374DE290-123F-4565-9164-39C4925E467B}'
+    if ($raw) { $downloads = [Environment]::ExpandEnvironmentVariables($raw) }
+  } catch { }
   if (-not $downloads -or -not (Test-Path -LiteralPath $downloads)) { $downloads = Join-Path $env:USERPROFILE 'Downloads' }
   Save-Text (Join-Path $AppDir 'config.json') ((@{ downloadDir = $downloads; version = $v.videodown } | ConvertTo-Json))
   Write-Host "    carpeta de descargas: $downloads"
