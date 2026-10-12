@@ -70,6 +70,10 @@ function Read-Installed {
   return [pscustomobject]@{}
 }
 
+# Everything printed below also goes to logs\install.log, for troubleshooting after the window closes.
+New-Item -ItemType Directory -Force -Path (Join-Path $AppDir 'logs') | Out-Null
+try { Start-Transcript -Path (Join-Path $AppDir 'logs\install.log') -Force | Out-Null } catch { }
+
 try {
   Write-Host "video-down: instalación en $AppDir" -ForegroundColor White
   $v = Get-Versions
@@ -223,10 +227,13 @@ set "DENO_NO_UPDATE_CHECK=1"
     }
     if ($chrome) { Start-Process -FilePath $chrome -ArgumentList 'chrome://extensions' }
   }
+  try { Stop-Transcript | Out-Null } catch { }
   exit 0
 } catch {
   Write-Host ''
   Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host 'No se ha completado la instalación. Revisa la conexión a Internet y vuelve a ejecutar el instalador.'
+  Write-Host "Registro completo: $(Join-Path $AppDir 'logs\install.log')"
+  try { Stop-Transcript | Out-Null } catch { }
   exit 1
 }

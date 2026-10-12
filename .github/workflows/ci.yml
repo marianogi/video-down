@@ -44,6 +44,7 @@ jobs:
   macos:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-14
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -95,6 +96,7 @@ jobs:
   windows:
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -112,11 +114,13 @@ jobs:
           node installer/build-release.mjs
       - name: Install silently with the .exe
         shell: pwsh
+        timeout-minutes: 15
         run: |
           $exe = Get-ChildItem release/video-down-setup-*.exe | Select-Object -First 1
           Start-Process -Wait -FilePath $exe.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=install.log'
           Get-Content install.log -Tail 5
           $app = Join-Path $env:LOCALAPPDATA 'video-down'
+          Get-Content (Join-Path $app 'logs\install.log') -ErrorAction SilentlyContinue
           Get-ChildItem $app, (Join-Path $app 'bin')
           & cmd.exe /d /c "`"$app\video-down-host.cmd`" --self-check"
           if ($LASTEXITCODE -ne 0) { throw 'self-check failed' }
