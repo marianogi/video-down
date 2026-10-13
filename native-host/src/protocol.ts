@@ -24,6 +24,27 @@ export interface PingRequest {
   type: "ping";
 }
 
+/**
+ * A cookie of the user's browser session for the site being downloaded. Only sent when yt-dlp
+ * said it needs a session, only cookies the browser itself would send to that URL, and the host
+ * only keeps them in a temporary file for the duration of that yt-dlp run.
+ */
+export interface SessionCookie {
+  /** As the browser reports it: "www.example.com", or ".example.com" for a domain cookie */
+  domain: string;
+  /** true: only for that exact host (no subdomains) */
+  hostOnly: boolean;
+  path: string;
+  secure: boolean;
+  name: string;
+  value: string;
+  /** Seconds since the epoch; absent for a session cookie */
+  expires?: number;
+}
+
+export const MAX_COOKIES = 200;
+export const MAX_COOKIE_CHARS = 4096;
+
 export interface ProbeRequest {
   id: string;
   type: "probe";
@@ -31,6 +52,8 @@ export interface ProbeRequest {
   url: string;
   /** Page URL to send as Referer (some CDNs require it). http(s) only. */
   referer?: string;
+  /** The site's session, only when an anonymous probe was refused. All must match `url`. */
+  cookies?: SessionCookie[];
 }
 
 export interface DownloadRequest {
@@ -40,6 +63,8 @@ export interface DownloadRequest {
   probeId: string;
   /** One of the variant ids returned by that probe. */
   variantId: string;
+  /** The site's session, when the probe needed it. The host checks them against the probe's URL. */
+  cookies?: SessionCookie[];
 }
 
 export interface UpdateRequest {
@@ -187,6 +212,94 @@ export function isSafeVariantId(value: unknown): value is string {
   return typeof value === "string" && VARIANT_RE.test(value);
 }
 
+// The cookie file yt-dlp reads is tab-separated, one cookie per line: a tab, CR or LF in any
+// field could forge another line (another domain), so control characters are refused outright.
+// deno-lint-ignore no-control-regex
+const COOKIE_CONTROL_RE = /[\u0000-\u001f\u007f]/;
+const COOKIE_DOMAIN_RE = /^\.?[A-Za-z0-9.-]{1,253}$/;
+const COOKIE_NAME_RE = /^[^\s;=,]{1,256}$/;
+
+/**
+ * Whether the browser would send this cookie to that URL's host (RFC 6265 domain match).
+ * Path and the secure flag are left to yt-dlp, which applies them per request.
+ */
+export function cookieMatchesUrl(cookie: Pick<SessionCookie, "domain" | "hostOnly">, url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const domain = cookie.domain.toLowerCase().replace(/^\./, "");
+  if (!domain) return false;
+  if (cookie.hostOnly) return host === domain;
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+/**
+ * Validate session cookies. With `url`, every cookie must belong to it; without it (download
+ * requests) the host checks them against the stored probe's URL instead.
+ */
+export function parseCookies(raw: unknown, url?: string): { ok: true; value: SessionCookie[] } | { ok: false; reason: string } {
+  if (!Array.isArray(raw)) return { ok: false, reason: "cookies must be a list" };
+  if (raw.length === 0 || raw.length > MAX_COOKIES) return { ok: false, reason: "invalid number of cookies" };
+  const out: SessionCookie[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return { ok: false, reason: "invalid cookie" };
+    const c = item as Record<string, unknown>;
+    if (typeof c.domain !== "string" || !COOKIE_DOMAIN_RE.test(c.domain)) return { ok: false, reason: "invalid cookie domain" };
+    if (typeof c.path !== "string" || !c.path.startsWith("/") || c.path.length > 1024 || CONTROL_RE.test(c.path)) {
+      return { ok: false, reason: "invalid cookie path" };
+    }
+    if (typeof c.name !== "string" || !COOKIE_NAME_RE.test(c.name) || COOKIE_CONTROL_RE.test(c.name)) {
+      return { ok: false, reason: "invalid cookie name" };
+    }
+    if (typeof c.value !== "string" || c.value.length > MAX_COOKIE_CHARS || COOKIE_CONTROL_RE.test(c.value)) {
+      return { ok: false, reason: "invalid cookie value" };
+    }
+    if (typeof c.hostOnly !== "boolean" || typeof c.secure !== "boolean") return { ok: false, reason: "invalid cookie flags" };
+    if (c.expires !== undefined && (typeof c.expires !== "number" || !Number.isFinite(c.expires) || c.expires < 0)) {
+      return { ok: false, reason: "invalid cookie expiry" };
+    }
+    const cookie: SessionCookie = {
+      domain: c.domain,
+      hostOnly: c.hostOnly,
+      path: c.path,
+      secure: c.secure,
+      name: c.name,
+      value: c.value,
+      ...(c.expires !== undefined ? { expires: Math.floor(c.expires as number) } : {}),
+    };
+    if (url !== undefined && !cookieMatchesUrl(cookie, url)) return { ok: false, reason: "cookie for another site" };
+    out.push(cookie);
+  }
+  return { ok: true, value: out };
+}
+
+/**
+ * The cookies in the Netscape format yt-dlp reads with --cookies. A session cookie gets an
+ * expiry a day ahead: the file only lives for one yt-dlp run, and a cookie without expiry
+ * could be discarded when the file is loaded.
+ */
+export function cookieFileText(cookies: SessionCookie[], nowSeconds: number): string {
+  const lines = ["# Netscape HTTP Cookie File", "# Written by video-down for one yt-dlp run; deleted afterwards."];
+  for (const c of cookies) {
+    const host = c.domain.replace(/^\./, "");
+    lines.push(
+      [
+        c.hostOnly ? host : `.${host}`,
+        c.hostOnly ? "FALSE" : "TRUE",
+        c.path,
+        c.secure ? "TRUE" : "FALSE",
+        String(c.expires ?? nowSeconds + 86_400),
+        c.name,
+        c.value,
+      ].join("\t"),
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 /**
  * Validate an untrusted message coming from the extension.
  * Returns the typed request or a human-readable reason.
@@ -211,15 +324,24 @@ export function parseRequest(raw: unknown): { ok: true; value: HostRequest } | {
       }
       const value: ProbeRequest = { id, type: "probe", url: msg.url };
       if (msg.referer !== undefined) value.referer = msg.referer as string;
+      if (msg.cookies !== undefined) {
+        const cookies = parseCookies(msg.cookies, msg.url);
+        if (!cookies.ok) return { ok: false, reason: cookies.reason, id };
+        value.cookies = cookies.value;
+      }
       return { ok: true, value };
     }
     case "download": {
       if (!isSafeId(msg.probeId)) return { ok: false, reason: "invalid probeId", id };
       if (!isSafeVariantId(msg.variantId)) return { ok: false, reason: "invalid variantId", id };
-      return {
-        ok: true,
-        value: { id, type: "download", probeId: msg.probeId, variantId: msg.variantId },
-      };
+      const value: DownloadRequest = { id, type: "download", probeId: msg.probeId, variantId: msg.variantId };
+      if (msg.cookies !== undefined) {
+        // Shape only here: the host matches their domain against the stored probe's URL.
+        const cookies = parseCookies(msg.cookies);
+        if (!cookies.ok) return { ok: false, reason: cookies.reason, id };
+        value.cookies = cookies.value;
+      }
+      return { ok: true, value };
     }
     default:
       return { ok: false, reason: "unknown type", id };

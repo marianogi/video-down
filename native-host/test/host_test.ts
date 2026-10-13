@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertThrows } from "./assert.ts";
-import { parseRequest, isSafeHttpUrl } from "../src/protocol.ts";
+import { cookieFileText, cookieMatchesUrl, parseCookies, parseRequest, isSafeHttpUrl } from "../src/protocol.ts";
 import { buildVariants, publicVariants, selectorForHeight } from "../src/variants.ts";
 import { parseProgressLine, ProgressTracker, summariseError } from "../src/progress.ts";
 import { encodeMessage, FrameDecoder, MAX_INCOMING_BYTES } from "../src/messaging.ts";
@@ -158,4 +158,59 @@ Deno.test("FrameDecoder rejects oversized frames", () => {
   const header = new Uint8Array(4);
   new DataView(header.buffer).setUint32(0, MAX_INCOMING_BYTES + 1, true);
   assertThrows(() => new FrameDecoder().push(header));
+});
+
+// ---------------------------------------------------------------- session cookies
+
+const igCookie = { domain: ".instagram.com", hostOnly: false, path: "/", secure: true, name: "sessionid", value: "abc%3A1" };
+
+Deno.test("cookies only for the site being downloaded", () => {
+  assert(cookieMatchesUrl(igCookie, "https://www.instagram.com/reel/X/"));
+  assert(cookieMatchesUrl(igCookie, "https://instagram.com/p/X/"));
+  assert(!cookieMatchesUrl(igCookie, "https://evil-instagram.com/"));
+  assert(!cookieMatchesUrl(igCookie, "https://example.com/"));
+  const hostOnly = { domain: "www.example.com", hostOnly: true };
+  assert(cookieMatchesUrl(hostOnly, "https://www.example.com/a"));
+  assert(!cookieMatchesUrl(hostOnly, "https://cdn.www.example.com/a"));
+});
+
+Deno.test("parseCookies refuses anything that could forge a line of the cookie file", () => {
+  assert(parseCookies([igCookie], "https://www.instagram.com/p/X/").ok);
+  for (const bad of [
+    { ...igCookie, value: "a\tb" },
+    { ...igCookie, value: "a\nexample.com\tTRUE\t/\tFALSE\t0\tx\ty" },
+    { ...igCookie, name: "a b" },
+    { ...igCookie, domain: "insta gram.com" },
+    { ...igCookie, path: "relative" },
+    { ...igCookie, value: "x".repeat(5000) },
+    { ...igCookie, expires: -1 },
+    { ...igCookie, secure: "yes" },
+  ]) {
+    assert(!parseCookies([bad], "https://www.instagram.com/p/X/").ok, JSON.stringify(bad).slice(0, 60));
+  }
+  const other = parseCookies([igCookie], "https://example.com/");
+  assert(!other.ok && other.reason === "cookie for another site");
+  assert(!parseCookies([], "https://www.instagram.com/").ok);
+  assert(!parseCookies(Array(201).fill(igCookie), "https://www.instagram.com/").ok);
+});
+
+Deno.test("parseRequest carries cookies on probes and downloads", () => {
+  const probe = parseRequest({ id: "a", type: "probe", url: "https://www.instagram.com/p/X/", cookies: [igCookie] });
+  assert(probe.ok && probe.value.type === "probe" && probe.value.cookies?.length === 1);
+  const wrongSite = parseRequest({ id: "a", type: "probe", url: "https://example.com/", cookies: [igCookie] });
+  assert(!wrongSite.ok);
+  const download = parseRequest({ id: "b", type: "download", probeId: "p1", variantId: "best", cookies: [igCookie] });
+  assert(download.ok && download.value.type === "download" && download.value.cookies?.length === 1);
+  assert(!parseRequest({ id: "b", type: "download", probeId: "p1", variantId: "best", cookies: [{ ...igCookie, value: "a\nb" }] }).ok);
+});
+
+Deno.test("cookieFileText writes the Netscape format yt-dlp reads", () => {
+  const text = cookieFileText(
+    [igCookie, { domain: "www.example.com", hostOnly: true, path: "/x", secure: false, name: "k", value: "v", expires: 2000000000 }],
+    1000,
+  );
+  const lines = text.trimEnd().split("\n");
+  assertEquals(lines[0], "# Netscape HTTP Cookie File");
+  assertEquals(lines[2], [".instagram.com", "TRUE", "/", "TRUE", "87400", "sessionid", "abc%3A1"].join("\t"));
+  assertEquals(lines[3], ["www.example.com", "FALSE", "/x", "FALSE", "2000000000", "k", "v"].join("\t"));
 });

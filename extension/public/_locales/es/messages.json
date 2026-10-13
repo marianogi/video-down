@@ -114,5 +114,9 @@
   "diagCopy": { "message": "Copiar informe" },
   "diagRefresh": { "message": "Actualizar" },
   "diagCopied": { "message": "Copiado" },
-  "diagUnavailable": { "message": "No se ha podido generar el informe de esa pestaña. Puede que se haya cerrado." }
+  "diagUnavailable": { "message": "No se ha podido generar el informe de esa pestaña. Puede que se haya cerrado." },
+  "optSiteSession": { "message": "Usar tu sesión de la web cuando yt-dlp la necesite (Instagram, Facebook, vídeos privados…). Solo se le pasan las cookies de esa web, y solo si antes falló sin ellas." },
+  "optSiteSessionYoutube": { "message": "También en YouTube. Desactivado por defecto: YouTube puede penalizar una cuenta usada con yt-dlp." },
+  "viaNativeSession": { "message": "Se descargará con el componente nativo (yt-dlp), usando tu sesión de esta web." },
+  "triedPermalink": { "message": "Esta página no es la del vídeo; se ha usado su enlace: $1" }
 }

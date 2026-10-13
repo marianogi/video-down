@@ -34,6 +34,8 @@ export interface AppSettings {
   showOverlay: boolean;
   minVideoWidth: number;
   preferNativeAboveMb: number;
+  useSiteSession: boolean;
+  useSiteSessionOnYoutube: boolean;
 
   recording: {
     minPollIntervalMs: number;
@@ -67,6 +69,8 @@ export function resolveSettings(raw: StorageConfig | null | undefined): AppSetti
     showOverlay: raw?.showOverlay ?? true,
     minVideoWidth: raw?.minVideoWidth ?? DEFAULT_MIN_VIDEO_WIDTH,
     preferNativeAboveMb: raw?.preferNativeAboveMb ?? DEFAULT_PREFER_NATIVE_ABOVE_MB,
+    useSiteSession: raw?.useSiteSession ?? true,
+    useSiteSessionOnYoutube: raw?.useSiteSessionOnYoutube ?? false,
 
     recording: {
       minPollIntervalMs: raw?.recording?.minPollIntervalMs ?? DEFAULT_MIN_POLL_MS,

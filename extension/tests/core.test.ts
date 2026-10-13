@@ -422,3 +422,42 @@ describe("diagnostic report", () => {
     expect(text).toContain("(5 variant(s))");
   });
 });
+
+// ------------------------------------------------------------------ site session for yt-dlp
+
+import { needsSession, toSessionCookie } from "../src/core/native/site-session";
+
+describe("site session for yt-dlp", () => {
+  it("recognises the errors a session can fix, and only those", () => {
+    for (const msg of [
+      "[Instagram] CWqAgUZgCku: Instagram sent an empty media response. Check if this post is accessible in your browser without being logged-in. If it is not, then use --cookies-from-browser or --cookies for the authentication.",
+      "[youtube] abc: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication.",
+      "[generic] Unable to download webpage: HTTP Error 403: Forbidden",
+      "[vimeo] 123: This video is private",
+      "Join this channel to get access to members-only content",
+      "This content may be inappropriate. Sign in to confirm your age",
+    ]) {
+      expect(needsSession(msg), msg.slice(0, 40)).toBe(true);
+    }
+    for (const msg of [
+      "Unsupported URL: https://www.instagram.com/",
+      "[generic] Unable to download webpage: HTTP Error 404: Not Found",
+      "Requested format is not available",
+      "Unable to extract video url",
+    ]) {
+      expect(needsSession(msg), msg.slice(0, 40)).toBe(false);
+    }
+  });
+
+  it("converts browser cookies and drops the ones the host would refuse", () => {
+    const base = { domain: ".instagram.com", hostOnly: false, path: "/", secure: true, name: "sessionid", value: "a%3Ab", session: false, expirationDate: 1893456000.5 };
+    expect(toSessionCookie(base)).toEqual({
+      domain: ".instagram.com", hostOnly: false, path: "/", secure: true, name: "sessionid", value: "a%3Ab", expires: 1893456000,
+    });
+    expect(toSessionCookie({ ...base, session: true })?.expires).toBeUndefined();
+    expect(toSessionCookie({ ...base, value: `a${String.fromCharCode(9)}b` })).toBeNull();
+    expect(toSessionCookie({ ...base, value: `a${String.fromCharCode(10)}b` })).toBeNull();
+    expect(toSessionCookie({ ...base, name: "bad name" })).toBeNull();
+    expect(toSessionCookie({ ...base, value: "x".repeat(5000) })).toBeNull();
+  });
+});

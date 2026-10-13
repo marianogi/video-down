@@ -10,6 +10,7 @@
 import { OVERLAY_CSS, DOWNLOAD_ICON, LOCK_ICON } from "./styles";
 import { t, formatBytes, formatEta } from "../../shared/i18n";
 import { route, type Route, type RouteInput, type DirectSource } from "../../core/router";
+import { permalinkNear } from "../permalinks";
 import { bindMedia } from "../../core/binding";
 import { readFacts, pageTitle, DRM_ATTR } from "../video-facts";
 import {
@@ -567,7 +568,10 @@ export class Overlay {
       case "manifest":
         return this.renderManifest(tr, r.media, token, nativeAvailable);
       case "native":
-        return this.renderNative(tr, r.url, r.reason === "youtube" ? undefined : referrerForNative(), token);
+        return this.renderNative(tr, r.url, r.reason === "youtube" ? undefined : referrerForNative(), token, {
+          // A feed's address means nothing to yt-dlp; the post's own link next to the video does.
+          ...(r.reason === "unknown-stream" ? { permalink: permalinkNear(tr.video, location.href) } : {}),
+        });
     }
   }
 
@@ -790,7 +794,13 @@ export class Overlay {
 
   // ---- native component (yt-dlp)
 
-  private async renderNative(tr: Tracked, url: string, referer: string | undefined, token: number): Promise<void> {
+  private async renderNative(
+    tr: Tracked,
+    url: string,
+    referer: string | undefined,
+    token: number,
+    options: { permalink?: string | null; viaPermalink?: boolean } = {},
+  ): Promise<void> {
     this.renderLoading(t("askingNative"));
     let reply: NativeProbeReply;
     try {
@@ -805,6 +815,11 @@ export class Overlay {
     if (!reply.success || !result) {
       if (reply.code === "drm") return this.renderDrm();
       this.cache.delete(`native:${url}`);
+      if (reply.code === "unsupported-url" && options.permalink) {
+        // yt-dlp does not know this page (a feed, a grid…): try the video's own page.
+        this.deps.note?.("menu", options.permalink, "native: page unsupported, trying the post's own link");
+        return this.renderNative(tr, options.permalink, undefined, token, { viaPermalink: true });
+      }
       if (reply.code === "unsupported-url") {
         // yt-dlp does not know this page. The player may still request its playlist later
         // (e.g. after pressing play), so "retry" searches the page again instead of re-asking yt-dlp.
@@ -815,7 +830,7 @@ export class Overlay {
         return;
       }
       this.renderError(friendlyError(reply.error) || t("nativeFailed"), () => {
-        void this.renderNative(tr, url, referer, ++this.renderToken);
+        void this.renderNative(tr, url, referer, ++this.renderToken, options);
       });
       return;
     }
@@ -830,6 +845,7 @@ export class Overlay {
         label,
         meta: metaFor([v.vcodec, v.approxBytes ? `~${formatBytes(v.approxBytes)}` : undefined]),
         payload: {
+          ...(reply.session ? { sessionUrl: url } : {}),
           probeId: result.probeId,
           variantId: v.id,
           title: result.title,
@@ -838,7 +854,11 @@ export class Overlay {
         },
       };
     });
-    this.renderChoices(result.title, t("viaNative"), choices);
+    const intro = [
+      reply.session ? t("viaNativeSession") : t("viaNative"),
+      options.viaPermalink ? t("triedPermalink", redactUrl(url)) : "",
+    ].filter(Boolean).join(" ");
+    this.renderChoices(result.title, intro, choices);
   }
 
   // ------------------------------------------------------------ downloads

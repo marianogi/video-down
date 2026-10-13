@@ -92,6 +92,8 @@ export interface StorageConfig {
   showOverlay?: boolean; // Draw the download icon over videos (default: true)
   minVideoWidth?: number; // Smallest <video> width (px) that gets the icon (default: 120)
   preferNativeAboveMb?: number; // Hand browser downloads bigger than this to the native component when installed (default: 1500)
+  useSiteSession?: boolean; // Lend the site's cookies to yt-dlp when it says it needs a session (default: true)
+  useSiteSessionOnYoutube?: boolean; // Same on YouTube, where an account used with yt-dlp may be penalised (default: false)
   recording?: {
     minPollIntervalMs?: number; // Minimum HLS poll interval (default: 1000ms)
     maxPollIntervalMs?: number; // Maximum HLS poll interval (default: 10000ms)

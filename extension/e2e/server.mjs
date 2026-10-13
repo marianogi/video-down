@@ -8,6 +8,8 @@
 //   /once/master.m3u8?token=…  single-use link: the first request gets the playlist, any repeat a 403
 //   /once/…              the variants and segments of that master (no token needed)
 //   /opaque/master.m3u8  "playlist" that is not HLS (encrypted bytes), served as mpegurl
+//   /session/…           only with the cookie vdsession=ok (403 otherwise), like a site behind a
+//                        login: post.html is a post page with its video, clip.mp4 that video
 //   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc, and the
 //                        master (clip.m3u8) answers 1.5 s late
 //   /protected/hls/cross-master.m3u8
@@ -57,6 +59,19 @@ export function startServer(port = 0) {
       }
       usedTokens.add(token);
       pathname = "/media/hls/master.m3u8";
+    } else if (pathname.startsWith("/session/")) {
+      if (!/(?:^|;\s*)vdsession=ok(?:;|$)/.test(req.headers.cookie ?? "")) {
+        res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: log in first");
+        return;
+      }
+      if (pathname === "/session/post.html") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
+          '<!doctype html><html><head><meta charset="utf-8"><title>Members post</title></head>' +
+            '<body><h1>Members post</h1><video controls src="/session/clip.mp4"></video></body></html>',
+        );
+        return;
+      }
+      if (pathname === "/session/clip.mp4") pathname = "/media/clip-360.mp4";
     } else if (pathname.startsWith("/once/")) {
       pathname = pathname.replace("/once/", "/media/hls/");
     } else if (pathname.startsWith("/media/uni/") && pathname.endsWith(".m3u8") && url.searchParams.get("token") !== "abc") {

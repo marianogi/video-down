@@ -13,6 +13,7 @@ import type {
   HostResponse,
   PongResponse,
   ProbeResultResponse,
+  SessionCookie,
   ProgressResponse,
   UpdateResultResponse,
 } from "@host/protocol";
@@ -174,10 +175,16 @@ export function invalidateNativeStatus(): void {
 
 // ---------------------------------------------------------------- probe
 
-export async function nativeProbe(url: string, referer?: string): Promise<ProbeResultResponse> {
+export async function nativeProbe(url: string, referer?: string, cookies?: SessionCookie[]): Promise<ProbeResultResponse> {
   let result: ProbeResultResponse | undefined;
   await session(
-    referer ? { id: newId(), type: "probe", url, referer } : { id: newId(), type: "probe", url },
+    {
+      id: newId(),
+      type: "probe",
+      url,
+      ...(referer ? { referer } : {}),
+      ...(cookies?.length ? { cookies } : {}),
+    },
     (m) => {
       if (m.type === "probe-result") {
         result = m;
@@ -201,9 +208,15 @@ export interface NativeDownloadCallbacks {
   onError(err: Error): void;
 }
 
-export function nativeDownload(probeId: string, variantId: string, cb: NativeDownloadCallbacks): { cancel(): void } {
+export function nativeDownload(
+  probeId: string,
+  variantId: string,
+  cb: NativeDownloadCallbacks,
+  cookies?: SessionCookie[],
+): { cancel(): void } {
   let done = false;
-  const s = session({ id: newId(), type: "download", probeId, variantId }, (m) => {
+  const request = { id: newId(), type: "download" as const, probeId, variantId, ...(cookies?.length ? { cookies } : {}) };
+  const s = session(request, (m) => {
     switch (m.type) {
       case "download-started":
         cb.onStarted(m.jobId, m.label);

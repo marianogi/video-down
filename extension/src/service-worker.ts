@@ -39,6 +39,9 @@ import { variantsFor, type BrowserVariant } from "./core/variants";
 import { isSafeHttpUrl } from "@host/protocol";
 import { withPageHeaders } from "./core/downloader/header-rules";
 import { diagUrl, formatDiagnostics, type DiagEntry } from "./core/diagnostics";
+import { needsSession, sessionCookiesFor } from "./core/native/site-session";
+import { isYoutubeHost } from "./core/router";
+import type { ProbeResultResponse, SessionCookie } from "@host/protocol";
 import {
   nativeStatus,
   nativeProbe,
@@ -680,19 +683,55 @@ function friendlyNativeError(err: unknown): { error: string; code?: string } {
   return { error: message };
 }
 
+/** Whether the user lets the extension lend this site's session to yt-dlp (see site-session.ts). */
+async function sessionAllowed(url: string): Promise<boolean> {
+  const settings = await loadSettings();
+  if (!settings.useSiteSession) return false;
+  return !isYoutubeHost(url) || settings.useSiteSessionOnYoutube;
+}
+
+/**
+ * Ask yt-dlp anonymously first. Only when it answers that it needs a session (login wall,
+ * cookies, 401/403…) and the user allows it, ask again with the cookies Chrome would send to
+ * that URL. Nothing is lent to sites that work without it.
+ */
+async function probeWithSession(
+  url: string,
+  referer?: string,
+): Promise<{ result: ProbeResultResponse; session: boolean }> {
+  try {
+    return { result: await nativeProbe(url, referer), session: false };
+  } catch (err) {
+    const retry =
+      err instanceof NativeHostError &&
+      err.code === "ytdlp-failed" &&
+      needsSession(err.message) &&
+      (await sessionAllowed(url));
+    if (!retry) throw err;
+    const cookies = await sessionCookiesFor(url).catch((): SessionCookie[] => []);
+    if (cookies.length === 0) throw err;
+    logger.info(`yt-dlp needs the site's session for ${new URL(url).hostname}; retrying with its cookies`);
+    return { result: await nativeProbe(url, referer, cookies), session: true };
+  }
+}
+
 async function handleNativeProbe(payload: NativeProbePayload): Promise<NativeProbeReply> {
   if (!isSafeHttpUrl(payload.url) || (payload.referer && !isSafeHttpUrl(payload.referer))) {
     return { success: false, error: "invalid url" };
   }
   try {
-    const result = await nativeProbe(payload.url, payload.referer);
-    return { success: true, result };
+    const { result, session } = await probeWithSession(payload.url, payload.referer);
+    return { success: true, result, ...(session ? { session } : {}) };
   } catch (err) {
     return { success: false, ...friendlyNativeError(err) };
   }
 }
 
-function startNativeDownload(payload: NativeDownloadPayload, origin?: Origin, presetId?: string): DownloadStartedReply {
+async function startNativeDownload(
+  payload: NativeDownloadPayload,
+  origin?: Origin,
+  presetId?: string,
+): Promise<DownloadStartedReply> {
   const id = presetId ?? generateDownloadId(payload.pageUrl || "native");
   if (origin) jobOrigins.set(id, origin);
   const now = Date.now();
@@ -713,6 +752,12 @@ function startNativeDownload(payload: NativeDownloadPayload, origin?: Origin, pr
     pushProgress(state);
   };
   save(() => undefined);
+
+  // The probe needed the site's session: lend the same cookies, read again now, to the download.
+  let cookies: SessionCookie[] | undefined;
+  if (payload.sessionUrl && isSafeHttpUrl(payload.sessionUrl) && (await sessionAllowed(payload.sessionUrl))) {
+    cookies = await sessionCookiesFor(payload.sessionUrl).catch(() => undefined);
+  }
 
   const job = nativeDownload(payload.probeId, payload.variantId, {
     onStarted: () => save((s) => (s.progress.stage = DownloadStage.DOWNLOADING)),
@@ -744,7 +789,7 @@ function startNativeDownload(payload: NativeDownloadPayload, origin?: Origin, pr
       void afterFinish(state);
       updateBadge();
     },
-  });
+  }, cookies);
   nativeJobs.set(id, job);
   updateBadge();
   return { success: true, downloadId: id, via: "native" };
@@ -757,15 +802,16 @@ async function startNativeForStream(
   presetId?: string,
 ): Promise<DownloadStartedReply> {
   try {
-    const probe = await nativeProbe(payload.url, payload.metadata.pageUrl);
+    const { result: probe, session } = await probeWithSession(payload.url, payload.metadata.pageUrl);
     const wanted = payload.variantHeight;
     const pick =
       (wanted && probe.variants.find((v) => v.height === wanted)) ||
       (wanted && probe.variants.find((v) => (v.height ?? 0) <= wanted)) ||
       probe.variants[0];
     if (!pick) return { success: false, error: chrome.i18n.getMessage("noVariants") };
-    return startNativeDownload(
+    return await startNativeDownload(
       {
+        ...(session ? { sessionUrl: payload.url } : {}),
         probeId: probe.probeId,
         variantId: pick.id,
         title: payload.metadata.title || probe.title,
@@ -986,7 +1032,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MessageType.NATIVE_PROBE:
       return reply(handleNativeProbe(message.payload));
     case MessageType.NATIVE_DOWNLOAD:
-      return reply(Promise.resolve(startNativeDownload(message.payload, originOf(sender))));
+      return reply(startNativeDownload(message.payload, originOf(sender)));
     case MessageType.NATIVE_UPDATE:
       return reply(
         nativeUpdate()

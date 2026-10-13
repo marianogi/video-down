@@ -65,7 +65,7 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 | 2 | Streaming **HLS** (`.m3u8`) sin cifrado o con AES-128 | Navegador | Se bajan los segmentos, se descifran si hace falta, y **ffmpeg.wasm** los une en un MP4 sin recodificar. | Una por cada variante del *master playlist* (1080p, 720p…), con tamaño estimado. Si la página solo pidió una calidad, se busca la master junto a ella. | Ninguno |
 | 3 | Streaming **DASH** (`.mpd`) sin DRM | Navegador | Se bajan por separado los segmentos de vídeo y de audio, y **ffmpeg.wasm** los mezcla en un MP4. | Una por cada `Representation` de vídeo. El audio se añade solo. | Ninguno |
 | 4 | **YouTube** (vídeos, Shorts y vídeos incrustados) | Componente nativo | yt-dlp obtiene los formatos y los descarga. El ffmpeg instalado une vídeo y audio en un MP4. | Todas las de YouTube (144p a 4K u 8K), con preferencia por H.264 cuando existe. | Componente nativo |
-| 5 | Reproductor con **formato propio** (`<video src="blob:…">` sin manifiesto HLS ni DASH reconocible) | Componente nativo | yt-dlp reconoce más de 1.000 sitios (Vimeo, Twitch, TikTok, Instagram, X…) y descarga con su extractor. | Las que ofrezca el sitio. | Componente nativo |
+| 5 | Reproductor con **formato propio** (`<video src="blob:…">` sin manifiesto HLS ni DASH reconocible) | Componente nativo | yt-dlp reconoce más de 1.000 sitios (Vimeo, Twitch, TikTok, Instagram, X…) y descarga con su extractor. Si la web exige sesión, se le presta la tuya; en un muro, se usa el enlace propio del vídeo. | Las que ofrezca el sitio. | Componente nativo |
 | 6 | HLS o DASH de **más de 1,5 GB** (límite configurable) | Componente nativo si está instalado; si no, navegador | yt-dlp descarga el mismo manifiesto con la misma resolución. Se evita así el límite de memoria de ffmpeg.wasm. | La misma que elegiste en el menú. | Componente nativo (recomendado) |
 | 7 | La descarga en el navegador **falla** (token del CDN, cabeceras raras…) | Componente nativo, a petición tuya | En el mensaje de error aparece «Probar con el componente nativo». | Las que encuentre yt-dlp. | Componente nativo |
 | 8 | Vídeo con **DRM** (Widevine, PlayReady, FairPlay, ClearKey) | Ninguna | Se muestra el aviso y no se ofrece descarga. | — | — |
@@ -170,6 +170,25 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 - **Qué se hace.** Se pasa la URL de la página a yt-dlp. Si el reproductor está dentro de un `<iframe>`
   (por ejemplo, un Vimeo incrustado), se envía también la página que lo contiene como `Referer`,
   porque muchos de esos reproductores lo exigen.
+- **Muros y listas de vídeos.** En un muro (el inicio de Instagram, una línea de tiempo de X, una portada
+  de Reddit…) la dirección de la página no es la del vídeo y yt-dlp no la reconoce. Entonces se usa el
+  enlace propio de la publicación, que se busca junto al vídeo con dos convenciones muy extendidas: el
+  enlace que rodea la fecha (`<a href="…"><time>…</time></a>`) y `rel="bookmark"`. La búsqueda sube
+  desde el vídeo hasta el primer bloque que tiene un enlace así; si ese bloque tiene varios distintos,
+  ya abarca varias publicaciones y no se adivina. El menú dice qué enlace se usó.
+- **Webs que exigen sesión** (Instagram, Facebook, Vimeo privado, Patreon, plataformas de cursos…).
+  yt-dlp entra primero sin sesión, como cualquier visitante. Solo si responde que la necesita (inicio de
+  sesión, cookies, error 401 o 403, contenido privado o para miembros, comprobación de edad o de «no soy
+  un robot»), la extensión repite la consulta con **tu sesión de esa web**, y la vuelve a prestar para
+  la descarga. El menú lo indica: «usando tu sesión de esta web».
+  - yt-dlp no puede leer él mismo las cookies de Chrome en Windows desde Chrome 127, porque Chrome las
+    cifra para su propio uso. Por eso las entrega la extensión.
+  - Solo se envían las cookies que Chrome mandaría a esa dirección, y el componente nativo comprueba otra
+    vez que cada una sea de esa web. Las escribe en un fichero temporal de su carpeta, solo legible por tu
+    usuario, para esa única ejecución de yt-dlp, y lo borra al terminar, también si cancelas. Nunca
+    aparecen en el registro.
+  - En **YouTube** está desactivado por defecto: el proyecto yt-dlp advierte de que usar tu cuenta con
+    yt-dlp puede hacer que YouTube la penalice. Se activa aparte en las opciones.
 
 ### Caso 6. Ficheros muy grandes
 
@@ -308,7 +327,8 @@ el ffmpeg nativo solo existe si se ha instalado el componente nativo.
 3. El lanzador (`video-down-host.cmd` o `video-down-host.sh`) arranca Deno con permisos explícitos:
    solo puede leer su propia carpeta, escribir en sus subcarpetas de trabajo y ejecutar yt-dlp.
 4. `host.ts` recibe un mensaje JSON validado (`ping`, `probe`, `download` o `update`), lanza yt-dlp
-   y devuelve el progreso.
+   y devuelve el progreso. `probe` y `download` pueden llevar las cookies de la web cuando hace falta
+   (caso 5); se rechazan si alguna es de otra web o tiene caracteres de control.
 5. Cada operación es un proceso aparte. Cancelar una descarga cierra la conexión, y el componente
    detiene yt-dlp y borra sus ficheros temporales.
 
@@ -455,8 +475,13 @@ servidor propio. Es más trabajo de montar y queda como opción.
 ## Seguridad
 
 - **Permisos de la extensión:** red (para ver manifiestos y descargar segmentos), descargas, almacenamiento,
-  documento oculto para ffmpeg.wasm, notificaciones, reglas de cabeceras y *native messaging*.
+  documento oculto para ffmpeg.wasm, notificaciones, reglas de cabeceras, *native messaging* y cookies.
   No tiene `tabs`, `scripting`, `identity` ni recursos accesibles desde las webs.
+- **Sesión prestada con límites:** las cookies solo se leen cuando yt-dlp ha dicho que necesita sesión, solo
+  las que Chrome enviaría a esa dirección y nunca las de YouTube salvo que lo actives. El componente nativo
+  rechaza las de otra web y las que llevan tabuladores o saltos de línea, que podrían falsear el fichero de
+  cookies. El fichero vive en la carpeta temporal del trabajo, se borra al acabar yt-dlp y, si algo se
+  interrumpe, a los 5 minutos en la siguiente ejecución. Nada de eso se escribe en el registro.
 - **Interfaz aislada:** el icono y el menú viven en un Shadow DOM cerrado. La página no puede leerlos
   ni cambiarlos, y todo el texto que llega de la web se pinta como texto, nunca como HTML.
 - **Script de página mínimo:** vigila las APIs de EME sin tocar claves ni licencias, y lee una copia de las
@@ -502,6 +527,8 @@ Se abren desde el botón de video-down de la barra de Chrome → **Opciones**.
 | Anchura mínima del vídeo | 120 px | Los vídeos más pequeños (fondos animados, miniaturas) no llevan icono |
 | Segmentos a la vez | 3 | Paralelismo de las descargas HLS y DASH en el navegador |
 | Pasar al componente nativo por encima de | 1.500 MB | Ver caso 6 |
+| Usar tu sesión de la web cuando yt-dlp la necesite | Sí | Ver caso 5: Instagram, Facebook, vídeos privados… |
+| También en YouTube | No | YouTube puede penalizar una cuenta usada con yt-dlp |
 
 ---
 
@@ -544,10 +571,10 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 43) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, búsqueda de la master, copias del reproductor, informe de diagnóstico y fin de una descarga directa cuando los avisos de Chrome se cruzan | `pnpm test` |
-| Unitarias del componente nativo (Deno, 12) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging* | `deno task test` |
+| Unitarias de la extensión (Vitest, 45) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, y cuándo y qué sesión se presta a yt-dlp | `pnpm test` |
+| Unitarias del componente nativo (Deno, 16) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) y formato del fichero de cookies | `deno task test` |
 | Extremo a extremo (Playwright, 22 + 4 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
-| Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador y **comparación de calidades con yt-dlp** como segunda opinión (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
+| Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador, **comparación de calidades con yt-dlp** como segunda opinión y **muro de una web con sesión**: enlace propio de la publicación, sesión prestada para consultar y para descargar (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:
 la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo. La que se distribuye es cerrada.

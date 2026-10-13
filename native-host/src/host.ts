@@ -15,6 +15,8 @@
 
 import { encodeMessage, FrameDecoder } from "./messaging.ts";
 import {
+  cookieFileText,
+  cookieMatchesUrl,
   type DownloadRequest,
   type ErrorCode,
   type HostRequest,
@@ -22,6 +24,7 @@ import {
   parseRequest,
   PROTOCOL_VERSION,
   type ProbeRequest,
+  type SessionCookie,
 } from "./protocol.ts";
 import { buildVariants, publicVariants, type StoredVariant, type YtdlpInfo } from "./variants.ts";
 import {
@@ -291,6 +294,17 @@ function sanitizeTitle(title: string): string {
     .slice(0, 150) || "video";
 }
 
+/**
+ * The site's session for one yt-dlp run: a file only this user can read, inside the job's own
+ * temporary folder, which is removed when yt-dlp ends (also on cancel and at the next start).
+ * Its contents are never logged.
+ */
+function writeCookieFile(dir: string, cookies: SessionCookie[]): string {
+  const path = join(dir, "cookies.txt");
+  Deno.writeTextFileSync(path, cookieFileText(cookies, Math.floor(Date.now() / 1000)), { mode: 0o600 });
+  return path;
+}
+
 // ------------------------------------------------------------------ handlers
 
 async function handlePing(id: string): Promise<void> {
@@ -316,9 +330,22 @@ async function handlePing(id: string): Promise<void> {
 async function handleProbe(req: ProbeRequest): Promise<void> {
   const args = [...baseArgs(), "-J", "--skip-download"];
   if (req.referer) args.push("--referer", req.referer);
+  if (req.cookies?.length) {
+    cleanStaleTmp();
+    const tmp = join(TMP_DIR, `probe-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`);
+    Deno.mkdirSync(tmp, { recursive: true });
+    activeTmpDir = tmp;
+    args.push("--cookies", writeCookieFile(tmp, req.cookies));
+  }
   args.push("--", req.url);
 
-  const { code, stdout, stderr } = await runYtdlp(args, undefined, PROBE_TIMEOUT_MS);
+  let result: { code: number; stdout: string; stderr: string };
+  try {
+    result = await runYtdlp(args, undefined, PROBE_TIMEOUT_MS);
+  } finally {
+    await removeTmp();
+  }
+  const { code, stdout, stderr } = result;
   if (code !== 0) {
     const message = summariseError(stderr);
     const unsupported = /unsupported url/i.test(message);
@@ -376,6 +403,10 @@ async function handleDownload(req: DownloadRequest): Promise<void> {
     fail(req.id, "not-found", "unknown variant");
     return;
   }
+  if (req.cookies && !req.cookies.every((c) => cookieMatchesUrl(c, probe.url))) {
+    fail(req.id, "bad-request", "cookie for another site");
+    return;
+  }
 
   const config = readConfig();
   cleanStaleTmp();
@@ -418,6 +449,7 @@ async function handleDownload(req: DownloadRequest): Promise<void> {
     `after_move:${FILE_PREFIX}%(filepath)s`,
   ];
   if (probe.referer) args.push("--referer", probe.referer);
+  if (req.cookies?.length) args.push("--cookies", writeCookieFile(tmp, req.cookies));
   args.push("--", probe.url);
 
   const tracker = new ProgressTracker();
@@ -508,8 +540,10 @@ function cleanStaleTmp(): void {
     for (const entry of Deno.readDirSync(TMP_DIR)) {
       if (!entry.isDirectory) continue;
       const dir = join(TMP_DIR, entry.name);
+      // A probe folder only lives for one yt-dlp -J run (at most 90 s) and may hold cookies.
+      const maxAge = entry.name.startsWith("probe-") ? 5 * 60_000 : 30 * 60_000;
       try {
-        if (now - newest(dir) > 30 * 60_000) Deno.removeSync(dir, { recursive: true });
+        if (now - newest(dir) > maxAge) Deno.removeSync(dir, { recursive: true });
       } catch {
         // in use or already gone
       }

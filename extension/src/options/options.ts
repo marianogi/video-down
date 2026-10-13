@@ -68,6 +68,8 @@ async function loadForm(): Promise<void> {
   set("minVideoWidth", s.minVideoWidth);
   set("maxConcurrent", s.maxConcurrent);
   set("preferNativeAboveMb", s.preferNativeAboveMb);
+  set("useSiteSession", s.useSiteSession);
+  set("useSiteSessionOnYoutube", s.useSiteSessionOnYoutube);
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -82,6 +84,8 @@ async function loadForm(): Promise<void> {
       askWhereToSave: bool("askWhereToSave"),
       showOverlay: bool("showOverlay"),
       historyEnabled: bool("historyEnabled"),
+      useSiteSession: bool("useSiteSession"),
+      useSiteSessionOnYoutube: bool("useSiteSessionOnYoutube"),
       minVideoWidth: int("minVideoWidth", 40, 2000, s.minVideoWidth),
       maxConcurrent: int("maxConcurrent", 1, 12, s.maxConcurrent),
       preferNativeAboveMb: int("preferNativeAboveMb", 100, 100000, s.preferNativeAboveMb),

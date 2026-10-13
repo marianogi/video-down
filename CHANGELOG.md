@@ -7,6 +7,26 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.1.7 (2026-10-14)
+
+Vídeos de webs que exigen sesión (Instagram, Facebook, Vimeo privado, plataformas de cursos…) y vídeos
+vistos en un muro. Genérico: sin código para ninguna web concreta.
+
+- **Tu sesión, solo cuando hace falta.** yt-dlp consulta primero sin sesión. Si responde que la necesita
+  (inicio de sesión, cookies, 401/403, contenido privado o para miembros, edad, «no soy un robot»), la
+  extensión repite con las cookies que Chrome enviaría a esa dirección y las vuelve a prestar para la
+  descarga. yt-dlp ya no puede leerlas él mismo de Chrome en Windows (cifrado propio de Chrome desde la
+  versión 127). En YouTube va desactivado por defecto porque puede penalizar la cuenta; hay un ajuste.
+- **Componente nativo:** acepta cookies en `probe` y `download`, rechaza las de otra web y las que llevan
+  caracteres de control, y las escribe en un fichero temporal de la carpeta del trabajo, legible solo por
+  tu usuario, que se borra al terminar yt-dlp (y, si algo se interrumpe, a los 5 minutos). No se registran.
+- **Muros:** si yt-dlp no reconoce la página (el inicio de Instagram, una línea de tiempo), se usa el
+  enlace propio de la publicación que acompaña al vídeo: el que rodea su fecha (`<time>`) o el marcado
+  como `rel="bookmark"`. Si junto al vídeo hay varios enlaces distintos, no se adivina.
+- Nuevo permiso de la extensión: `cookies`. Chrome lo concede al recargar la extensión.
+- Pruebas: 45 unitarias, 16 del componente nativo y una de extremo a extremo con un muro cuya publicación
+  y cuyo vídeo solo se abren con sesión.
+
 ## 0.1.6 (2026-10-13)
 
 Más calidades encontradas cuando la página solo deja ver una. Todo es genérico, sin código para

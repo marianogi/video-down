@@ -114,5 +114,9 @@
   "diagCopy": { "message": "Copy report" },
   "diagRefresh": { "message": "Refresh" },
   "diagCopied": { "message": "Copied" },
-  "diagUnavailable": { "message": "The report for that tab could not be generated. It may have been closed." }
+  "diagUnavailable": { "message": "The report for that tab could not be generated. It may have been closed." },
+  "optSiteSession": { "message": "Use your session on the site when yt-dlp needs it (Instagram, Facebook, private videos…). Only that site's cookies are passed, and only after it failed without them." },
+  "optSiteSessionYoutube": { "message": "Also on YouTube. Off by default: YouTube may penalise an account used with yt-dlp." },
+  "viaNativeSession": { "message": "It will be downloaded with the native component (yt-dlp), using your session on this site." },
+  "triedPermalink": { "message": "This page is not the video's own; its link was used: $1" }
 }

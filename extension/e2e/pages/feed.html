@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Feed</title>
+<style>body{margin:40px;font-family:sans-serif} article{margin-bottom:24px} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Feed</h1>
+<!-- Like a social network's feed: the player uses its own protocol (blob, no playlist), the feed's
+     address means nothing to yt-dlp, and the post's own page (linked from its date) only opens
+     with the user's session. -->
+<article>
+  <header><a href="/someone/">someone</a> · <a href="/session/post.html"><time datetime="2026-10-14T10:00:00Z">2 h</time></a></header>
+  <video controls muted></video>
+</article>
+<article>
+  <header><a href="/other/">other</a> · <a href="/session/other.html"><time datetime="2026-10-14T09:00:00Z">3 h</time></a></header>
+  <p>A post without video.</p>
+</article>
+<script type="module">import { msePlayer } from "./player.js"; msePlayer(null);</script>
+</body></html>

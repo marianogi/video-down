@@ -390,6 +390,28 @@ test("parity · the menu lists the same HLS and DASH resolutions as yt-dlp (VD_E
   }
 });
 
+test("9 · feed of a site behind a login: the post's own link, with the site's session (VD_E2E_NATIVE=1)", async ({ page, baseUrl, extContext }) => {
+  test.skip(process.env.VD_E2E_NATIVE !== "1", "needs the installed native component");
+  // The user is logged in to the site: the browser has its session cookie.
+  await extContext.addCookies([{ name: "vdsession", value: "ok", domain: "127.0.0.1", path: "/" }]);
+  try {
+    await page.goto(`${baseUrl}/feed.html`);
+    await trigger(page).click();
+    // yt-dlp does not know the feed, tries the post's link, is refused without a session (403)
+    // and then gets the qualities with the site's cookies.
+    await expect(menu(page).getByText(/using your session on this site/)).toBeVisible({ timeout: 90_000 });
+    await expect(menu(page).getByText(/session\/post\.html/)).toBeVisible();
+    await menu(page).locator(".vd-list button").first().click();
+    // The video itself also needs the session: the download must get the cookies again.
+    await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
+    const saved = (await menu(page).locator(".vd-path").first().textContent())?.trim() ?? "";
+    expect(probe(saved)).toMatchObject({ height: 360, video: "h264", audio: "aac" });
+    rmSync(saved, { force: true });
+  } finally {
+    await extContext.clearCookies();
+  }
+});
+
 test("7 · the browser engine fails → the same job continues with yt-dlp (VD_E2E_NATIVE=1)", async ({ page, baseUrl }) => {
   test.skip(process.env.VD_E2E_NATIVE !== "1", "needs the installed native component");
   await page.goto(`${baseUrl}/hls-garbage.html`);

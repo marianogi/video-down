@@ -115,12 +115,16 @@ export interface NativeProbePayload {
 
 export interface NativeProbeReply {
   success: boolean;
+  /** yt-dlp needed the site's session (cookies) for this probe */
+  session?: boolean;
   result?: ProbeResultResponse;
   error?: string;
   code?: string;
 }
 
 export interface NativeDownloadPayload {
+  /** The URL that was probed with the site's session; its cookies are lent again for the download */
+  sessionUrl?: string;
   probeId: string;
   variantId: string;
   title: string;
