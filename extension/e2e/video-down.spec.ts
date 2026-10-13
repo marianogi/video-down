@@ -303,10 +303,11 @@ test("10 · live HLS: exact copy, time-shift player, saved as MP4", async ({ pag
   await copy.click();
   const recorder = await opened;
   await expect(recButton(page)).toHaveAccessibleName("Recording this video");
-  const file = await recordAndSave(recorder, downloads, 6);
+  // The first reload already brings 6 s (the live edge): 10 s proves later segments are followed.
+  const file = await recordAndSave(recorder, downloads, 10);
   await expect(recorder.locator("#save-status")).toContainText(".mp4");
   expect(probe(file)).toMatchObject({ height: 360, video: "h264", audio: "aac" });
-  expect(durationOf(file)).toBeGreaterThanOrEqual(5);
+  expect(durationOf(file)).toBeGreaterThanOrEqual(9);
   await recorder.close();
 });
 
