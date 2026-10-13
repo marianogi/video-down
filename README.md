@@ -555,23 +555,23 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.1.5, 13/10/2026)
+### Estado de verificación (versión 0.1.6, 13/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso, dos veces seguidas (la segunda no vuelve a descargar Deno ni ffmpeg) | Correcto |
-| Windows 11 | Componente nativo hablando como lo hace Chrome: `ping`, rechazo de una URL `file://`, consulta y descarga de YouTube (H.264 + AAC verificados con `ffprobe`), cancelación sin procesos ni temporales sueltos | Correcto |
-| Windows 11 | Las 22 pruebas de extremo a extremo, incluidas YouTube, el respaldo con yt-dlp y la comparación con yt-dlp | 22 de 22 |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip descomprimido con `unzip`, permisos de ejecución conservados, `install.sh`, autocomprobación del componente nativo, desinstalación | Correcto |
-| macOS 14, GitHub Actions | Pruebas de extremo a extremo, incluidos reproductores incrustados con `Referer` obligatorio y el paso de un HLS grande a yt-dlp con el componente nativo de Mac | 21 de 21 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` en modo silencioso, verificación SHA-256 de Deno, ffmpeg y yt-dlp, autocomprobación | Correcto |
-| Windows Server 2025, GitHub Actions | Pruebas de extremo a extremo, incluidos reproductores incrustados con `Referer` obligatorio y el paso a yt-dlp | 21 de 21 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.1.5; extensión y componente nativo en 0.1.6; autocomprobación del componente (yt-dlp, ffmpeg y Deno presentes) | Correcto |
+| Windows 11 | Las 26 pruebas de extremo a extremo, incluidas YouTube, el respaldo con yt-dlp, la comparación con yt-dlp y los cinco casos nuevos de la 0.1.6 | 26 de 26 |
+| Windows 11 | Los cinco casos nuevos con el código de la 0.1.5: enlace de un solo uso, master junto a una variante, dirección reescrita, web de una sola página y service worker | Fallan los cinco, como se esperaba |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip descomprimido con `unzip`, `install.sh`, autocomprobación del componente nativo y pruebas de extremo a extremo con el componente nativo de Mac | 25 de 25 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` en modo silencioso, verificación SHA-256 de Deno, ffmpeg y yt-dlp, autocomprobación y pruebas de extremo a extremo | 25 de 25 (YouTube no se ejecuta en GitHub) |
 
-La verificación en máquinas limpias encontró y corrigió tres fallos que no se veían en el equipo de
-desarrollo: el instalador de Windows perdía `Get-FileHash` al lanzarse desde PowerShell 7, su aviso de
-error bloqueaba la instalación silenciosa, y ffmpeg.wasm podía recibir un trabajo antes de terminar de
-cargarse en equipos lentos (fallo heredado de Media Bridge). Se relanza desde la pestaña *Actions*
-del repositorio → CI → *Run workflow*.
+La verificación en máquinas limpias encontró dos carreras que no se veían en el equipo de desarrollo,
+ambas corregidas en la 0.1.6 antes de publicarla. En Windows, la master encontrada junto a una variante
+llegaba con el menú ya abierto y el menú no se actualizaba. En macOS, un fichero local terminaba tan
+rápido que un aviso de progreso tardío volvía a marcarlo como «descargando». Antes, en la 0.1.2 a la
+0.1.5, encontró otros tres: el instalador de Windows perdía `Get-FileHash` al lanzarse desde PowerShell 7,
+su aviso de error bloqueaba la instalación silenciosa, y ffmpeg.wasm podía recibir un trabajo antes de
+terminar de cargarse. Se relanza desde la pestaña *Actions* del repositorio → CI → *Run workflow*.
 
 Pendiente de probar a mano en un Mac real: el doble clic en «Instalar video-down.command» con
 Gatekeeper, y cargar la extensión en Google Chrome para Mac.
