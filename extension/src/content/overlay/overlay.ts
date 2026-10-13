@@ -144,6 +144,11 @@ export class Overlay {
   private pendingRetry: ReturnType<typeof setTimeout> | null = null;
   private pointer = { x: -1, y: -1 };
   private readonly cache = new Map<string, Promise<unknown>>();
+  /**
+   * Progress for jobs this frame does not know yet. A small or local file can finish before the
+   * reply that names its job arrives here; that last update must not be lost.
+   */
+  private readonly earlyProgress = new Map<string, { push: ProgressPush; at: number }>();
 
   constructor(private readonly deps: OverlayDeps) {
     this.host = document.createElement("video-down-overlay");
@@ -228,16 +233,26 @@ export class Overlay {
   }
 
   onProgress(push: ProgressPush): void {
+    let known = false;
     for (const tr of this.tracked.values()) {
       const job = tr.jobs.get(push.id);
       if (!job) continue;
-      job.progress = push.progress;
-      if (push.via) job.via = push.via;
-      if (push.filePath) job.filePath = push.filePath;
-      if (push.label) job.label = push.label;
-      this.updateRing(tr);
-      if (this.openKey === tr.key) this.renderJobs(tr);
+      known = true;
+      this.applyProgress(tr, job, push);
     }
+    if (known) return;
+    const now = Date.now();
+    for (const [id, item] of this.earlyProgress) if (now - item.at > 60_000) this.earlyProgress.delete(id);
+    if (this.earlyProgress.size < 50) this.earlyProgress.set(push.id, { push, at: now });
+  }
+
+  private applyProgress(tr: Tracked, job: JobView, push: ProgressPush): void {
+    job.progress = push.progress;
+    if (push.via) job.via = push.via;
+    if (push.filePath) job.filePath = push.filePath;
+    if (push.label) job.label = push.label;
+    this.updateRing(tr);
+    if (this.openKey === tr.key) this.renderJobs(tr);
   }
 
   // ------------------------------------------------------------ discovery
@@ -838,11 +853,15 @@ export class Overlay {
       if (!reply?.success || !reply.downloadId) {
         throw new Error(reply?.error || t("downloadFailed"));
       }
-      tr.jobs.set(reply.downloadId, {
+      const job: JobView = {
         id: reply.downloadId,
         label: choice.label,
         via: reply.via ?? (choice.kind === "native" ? "native" : "browser"),
-      });
+      };
+      tr.jobs.set(reply.downloadId, job);
+      const early = this.earlyProgress.get(reply.downloadId);
+      this.earlyProgress.delete(reply.downloadId);
+      if (early) this.applyProgress(tr, job, early.push);
       this.updateRing(tr);
       this.renderJobs(tr);
     } catch (err) {

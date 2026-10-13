@@ -35,6 +35,10 @@ ninguna web concreta:
 - Si el menú está abierto y aparece una lista mejor (por ejemplo, la master de la única calidad que
   se mostraba), el menú se actualiza solo con sus calidades. Lo destapó la prueba en Windows limpio
   de GitHub, más lenta que el equipo de desarrollo.
+- Un fichero pequeño o local que terminaba antes de que el menú conociera su descarga se quedaba en
+  «Empezando…» aunque estaba guardado: el aviso de «terminado» llegaba antes que la respuesta con el
+  identificador de la descarga y se perdía. Ahora el menú lo guarda y lo aplica al registrarla. Lo
+  destapó la prueba en macOS limpio de GitHub.
 - **Informe de diagnóstico.** En el menú del vídeo (enlace «Informe de diagnóstico») y en el popup
   (botón «Diagnóstico»): qué listas pidió la página, desde qué marco, qué respondió el servidor y qué
   concluyó la extensión. Las direcciones van sin parámetros, sin tokens ni firmas. Se copia con un
