@@ -247,6 +247,8 @@ export class Overlay {
   }
 
   private applyProgress(tr: Tracked, job: JobView, push: ProgressPush): void {
+    // A finished download never goes back (a late update may arrive after the final one).
+    if (job.progress?.stage === DownloadStage.COMPLETED && push.progress.stage !== DownloadStage.COMPLETED) return;
     job.progress = push.progress;
     if (push.via) job.via = push.via;
     if (push.filePath) job.filePath = push.filePath;

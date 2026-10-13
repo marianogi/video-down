@@ -35,16 +35,21 @@ ninguna web concreta:
 - Si el menú está abierto y aparece una lista mejor (por ejemplo, la master de la única calidad que
   se mostraba), el menú se actualiza solo con sus calidades. Lo destapó la prueba en Windows limpio
   de GitHub, más lenta que el equipo de desarrollo.
-- Un fichero pequeño o local que terminaba antes de que el menú conociera su descarga se quedaba en
-  «Empezando…» aunque estaba guardado: el aviso de «terminado» llegaba antes que la respuesta con el
-  identificador de la descarga y se perdía. Ahora el menú lo guarda y lo aplica al registrarla. Lo
-  destapó la prueba en macOS limpio de GitHub.
+- **Descargas directas rápidas que no decían «terminada».** Si Chrome avisaba de «completa» justo
+  mientras la extensión comprobaba el estado (un fichero pequeño o local), un aviso de progreso
+  tardío volvía a marcar la descarga como «descargando 100 %» después de terminada, y el menú se
+  quedaba así. Ahora una descarga terminada no puede volver atrás, ni en el registro ni en el menú.
+  Lo destapó la prueba en macOS limpio de GitHub, y una prueba unitaria nueva reproduce el orden
+  exacto de los avisos. El menú guarda además los avisos de descargas que aún no conoce, por si el
+  último llega antes que la respuesta con su identificador.
 - **Informe de diagnóstico.** En el menú del vídeo (enlace «Informe de diagnóstico») y en el popup
   (botón «Diagnóstico»): qué listas pidió la página, desde qué marco, qué respondió el servidor y qué
   concluyó la extensión. Las direcciones van sin parámetros, sin tokens ni firmas. Se copia con un
   botón para enviarlo cuando un vídeo no sale como se esperaba.
 - Pruebas nuevas: enlace de un solo uso con descarga, master encontrada junto a una variante con
   token, dirección reescrita, web de una sola página y service worker. Las cinco fallan con la 0.1.5.
+  Unitarias: búsqueda de la master, copias del reproductor, informe y la carrera de las descargas
+  directas (43 en total).
 
 ## 0.1.5 (2026-10-12)
 

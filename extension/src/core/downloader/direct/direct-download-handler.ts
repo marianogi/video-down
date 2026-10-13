@@ -39,6 +39,8 @@ interface DownloadListener {
   reject: (error: Error) => void;
   stateId: string;
   handler: DirectDownloadHandler; // Store instance reference
+  /** Set once completion or failure is handled: later progress events must not overwrite it */
+  done?: boolean;
 }
 
 /**
@@ -98,14 +100,16 @@ export class DirectDownloadHandler {
   ): Promise<void> {
     const downloadItem = await this.getDownloadItem(chromeDownloadId);
 
-    if (!downloadItem) {
+    // Already settled (e.g. by the immediate state check): a late "progress" must not turn a
+    // finished download back into "downloading".
+    if (!downloadItem || listener.done) {
       return;
     }
 
     // Update progress if download item has progress info and state ID
     if (listener.stateId && downloadItem.bytesReceived !== undefined) {
       logger.debug(`Updating download state progress for ${listener.stateId}`);
-      await this.updateDownloadStateProgress(listener.stateId, downloadItem);
+      await this.updateDownloadStateProgress(listener, downloadItem);
     }
 
     // Handle completion or failure
@@ -141,15 +145,17 @@ export class DirectDownloadHandler {
    * @private
    */
   private async updateDownloadStateProgress(
-    stateId: string,
+    listener: DownloadListener,
     downloadItem: chrome.downloads.DownloadItem,
   ): Promise<void> {
     if (downloadItem.bytesReceived === undefined) {
       return;
     }
 
-    const currentState = await getDownload(stateId);
-    if (!currentState) {
+    const currentState = await getDownload(listener.stateId);
+    // Checked after every wait: completion may have been recorded meanwhile. The write below is
+    // queued before completion's own write, which therefore always lands last.
+    if (!currentState || listener.done) {
       return;
     }
 
@@ -164,6 +170,7 @@ export class DirectDownloadHandler {
     currentState.progress.message = "Downloading...";
 
     await storeDownload(currentState);
+    if (listener.done) return;
     this.notifyProgress(currentState);
   }
 
@@ -181,6 +188,7 @@ export class DirectDownloadHandler {
       totalBytes: downloadItem.totalBytes,
     };
 
+    listener.done = true;
     DirectDownloadHandler.downloadProgressListeners.delete(chromeDownloadId);
     listener.resolve(result);
   }
@@ -194,6 +202,7 @@ export class DirectDownloadHandler {
     downloadItem: chrome.downloads.DownloadItem,
     listener: DownloadListener,
   ): void {
+    listener.done = true;
     DirectDownloadHandler.downloadProgressListeners.delete(chromeDownloadId);
     listener.reject(new Error(downloadItem.error || "Download interrupted"));
   }

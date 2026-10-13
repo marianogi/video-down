@@ -97,7 +97,8 @@ export async function saveBlobUrlToFile(
           void (async () => {
             // Store chromeDownloadId in download state for reliable cancellation
             const currentState = await getDownload(stateId);
-            if (currentState) {
+            // Once settled, the caller records the final state: do not overwrite it with this copy.
+            if (currentState && !settled) {
               currentState.chromeDownloadId = downloadId;
               await storeDownload(currentState);
             }
