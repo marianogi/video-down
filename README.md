@@ -664,17 +664,18 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.1.7, 14/10/2026)
+### Estado de verificación (versión 0.2.0, 14/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.1.6; extensión y componente nativo en 0.1.7; autocomprobación del componente | Correcto |
-| Windows 11 | Las 27 pruebas de extremo a extremo, incluidas YouTube y el muro de una web con sesión | 27 de 27 |
-| Windows 11 | Componente nativo nuevo contra yt-dlp real, fuera de su carpeta instalada: rechazo sin sesión, rechazo de cookies de otra web, consulta y descarga con sesión, sin fichero de cookies al terminar y sin cookies en el registro | 6 de 6 |
-| Windows 11 | yt-dlp sin sesión en Instagram: un vídeo público antiguo funciona; un reel público pide sesión | Motivo de la 0.1.7 |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo con el componente nativo de Mac | 26 de 26 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 26 de 26 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.1.7; extensión, página de grabación y componente nativo en 0.2.0 | Correcto |
+| Windows 11 | Las 32 pruebas de extremo a extremo, incluidas YouTube, el muro con sesión, la grabación de un directo HLS y la captura con los cuatro perfiles | 32 de 32 |
+| Windows 11 | Qué graba MediaRecorder en este Chromium: MP4 con H.264 + AAC, VP9 y AV1, fragmentos de 1 s alineados con los fotogramas clave | Base del diseño |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo, grabación incluida | 31 de 31 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo, grabación incluida | 31 de 31 (YouTube no se ejecuta en GitHub) |
 
+La grabación se ha probado con un directo HLS simulado por el servidor de pruebas y con un vídeo local;
+no con una emisión real de internet.
 No se ha probado con una cuenta real de Instagram: la prueba usa un sitio local que exige sesión.
 
 La verificación en máquinas limpias encontró dos carreras que no se veían en el equipo de desarrollo,
