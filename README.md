@@ -14,16 +14,17 @@ Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo de
 
 1. [Cómo se usa](#cómo-se-usa)
 2. [Las vías de descarga: toda la casuística](#las-vías-de-descarga-toda-la-casuística)
-3. [Diagrama de decisión](#diagrama-de-decisión)
-4. [Qué hace cada pieza: navegador, ffmpeg, Python, Deno y yt-dlp](#qué-hace-cada-pieza-navegador-ffmpeg-python-deno-y-yt-dlp)
-5. [Arquitectura y ficheros](#arquitectura-y-ficheros)
-6. [Instalación en Windows y en macOS](#instalación-en-windows-y-en-macos)
-7. [Por qué el instalador no puede activar la extensión él solo](#por-qué-el-instalador-no-puede-activar-la-extensión-él-solo)
-8. [Seguridad](#seguridad)
-9. [Ajustes](#ajustes)
-10. [Desarrollo](#desarrollo)
-11. [Limitaciones conocidas](#limitaciones-conocidas)
-12. [Créditos y licencias](#créditos-y-licencias)
+3. [Grabar en directo, con diferido](#grabar-en-directo-con-diferido)
+4. [Diagrama de decisión](#diagrama-de-decisión)
+5. [Qué hace cada pieza: navegador, ffmpeg, Python, Deno y yt-dlp](#qué-hace-cada-pieza-navegador-ffmpeg-python-deno-y-yt-dlp)
+6. [Arquitectura y ficheros](#arquitectura-y-ficheros)
+7. [Instalación en Windows y en macOS](#instalación-en-windows-y-en-macos)
+8. [Por qué el instalador no puede activar la extensión él solo](#por-qué-el-instalador-no-puede-activar-la-extensión-él-solo)
+9. [Seguridad](#seguridad)
+10. [Ajustes](#ajustes)
+11. [Desarrollo](#desarrollo)
+12. [Limitaciones conocidas](#limitaciones-conocidas)
+13. [Créditos y licencias](#créditos-y-licencias)
 
 ---
 
@@ -38,6 +39,9 @@ Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo de
 
 El fichero se guarda en la carpeta de descargas de Chrome. En las opciones se puede pedir que Chrome
 pregunte dónde guardar cada descarga.
+
+Junto al icono de descarga hay un segundo botón con un punto rojo: **grabar** lo que se emite, con
+diferido. Ver [Grabar en directo, con diferido](#grabar-en-directo-con-diferido).
 
 Si un vídeo no sale como esperabas (faltan calidades, no se encuentra…), el enlace «Informe de
 diagnóstico» al pie del menú cuenta qué ha visto la extensión en esa pestaña. Ver el
@@ -69,7 +73,7 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 | 6 | HLS o DASH de **más de 1,5 GB** (límite configurable) | Componente nativo si está instalado; si no, navegador | yt-dlp descarga el mismo manifiesto con la misma resolución. Se evita así el límite de memoria de ffmpeg.wasm. | La misma que elegiste en el menú. | Componente nativo (recomendado) |
 | 7 | La descarga en el navegador **falla** (token del CDN, cabeceras raras…) | Componente nativo, a petición tuya | En el mensaje de error aparece «Probar con el componente nativo». | Las que encuentre yt-dlp. | Componente nativo |
 | 8 | Vídeo con **DRM** (Widevine, PlayReady, FairPlay, ClearKey) | Ninguna | Se muestra el aviso y no se ofrece descarga. | — | — |
-| 9 | Emisión **en directo** | Ninguna en esta versión | Se avisa de que no se graban directos. | — | — |
+| 9 | Emisión **en directo** | Grabación (botón rojo) | No se descarga: se graba, con copia exacta o captura del reproductor, y se puede ver en diferido. | Las calidades de la emisión, o el perfil de captura que elijas. | Ninguno |
 | 10 | Vídeo que todavía no ha empezado a cargar | Espera | El menú dice «Esperando a que el vídeo empiece a cargar» y se actualiza solo. | — | — |
 | 11 | Lista detectada que no se puede leer (página de error, formato propio cifrado, o un enlace que caducó sin que el reproductor llegara a leerlo) | Ninguna, con diagnóstico | El menú explica el motivo exacto y ofrece «Reintentar»; si procede, también probar con yt-dlp. Un enlace de un solo uso que el reproductor sí leyó ya no llega aquí: se usa su copia (caso 2). | — | — |
 
@@ -219,8 +223,8 @@ error ofrece «Probar con el componente nativo».
 ### Caso 9. Directos
 
 Las emisiones en directo se reconocen (HLS sin `#EXT-X-ENDLIST`, DASH `type="dynamic"`, directos de
-YouTube) y se avisa de que esta versión no las graba. El código de grabación heredado de Media Bridge
-sigue en el repositorio para una versión futura.
+YouTube). El icono de descarga explica que un directo no se descarga, y el botón rojo lo **graba**:
+ver [Grabar en directo, con diferido](#grabar-en-directo-con-diferido).
 
 ### Caso 10. Varios vídeos en la misma página
 
@@ -274,6 +278,74 @@ sale del equipo salvo que lo copies tú.
 
 ---
 
+## Grabar en directo, con diferido
+
+El segundo botón de cada vídeo, con un punto rojo, graba lo que se emite. Sirve para directos y también
+para cualquier vídeo que se esté reproduciendo. Su menú ofrece dos formas de grabar:
+
+### Copia exacta del directo
+
+- **Cuándo.** El vídeo es una emisión HLS en directo que la extensión puede leer: la misma detección que
+  las descargas, con la copia del reproductor, la master junto a la variante, el service worker de la
+  página, etc.
+- **Qué hace.** Guarda los segmentos originales a medida que aparecen en la lista, sin recodificar: la
+  calidad de la emisión y casi sin CPU. Eliges la calidad (las variantes de la master) y el menú dice
+  cuánto ocupa por hora.
+- **Detalles.** Los segmentos se identifican por su número de secuencia, no por su URL, porque las CDN
+  renombran y firman las direcciones. Empieza en el «borde» del directo, como un reproductor. Los
+  segmentos AES-128 se descifran al guardarlos. Si la conexión se retrasa y un segmento desaparece de la
+  lista antes de poder pedirlo, queda un corte marcado y la página lo cuenta. Si la emisión termina,
+  la grabación se cierra sola. Cualquier otro cifrado es DRM y no se graba.
+
+### Captura del reproductor
+
+- **Cuándo.** Con cualquier reproductor, también los de protocolo propio (YouTube, redes sociales…),
+  siempre que no tenga DRM.
+- **Qué hace.** Graba lo que muestra el `<video>` con `captureStream()` y `MediaRecorder`, recodificando
+  en tiempo real con el perfil que elijas:
+
+  | Perfil | Códecs (el primero que tu Chrome sepa grabar) | Para qué | Tamaño aproximado a 1080p, 30 fps |
+  |---|---|---|---|
+  | Máxima calidad | H.264 High + AAC | Calidad y compatibilidad | 3,4 GB por hora |
+  | Equilibrado | VP9 + Opus | Buena calidad en la mitad de espacio | 1,7 GB por hora |
+  | Archivo pequeño | AV1 + Opus (o VP9) | Ocupar poco; usa más CPU | 0,9 GB por hora |
+  | Menos CPU | H.264 Baseline + AAC | Equipos justos: es lo que mejor hacen los codificadores por hardware | 2,0 GB por hora |
+
+  El tamaño se calcula con la resolución real del vídeo; el menú lo indica para cada perfil.
+- **Requisito.** La pestaña del vídeo debe seguir abierta y reproduciendo, mejor visible, por ejemplo
+  en su propia ventana: se graba lo que muestra.
+
+### La pestaña de grabación
+
+Cada grabación se abre en una pestaña propia con:
+
+- un **reproductor en diferido**: pausa, retrocede, adelanta y pulsa «Ir al directo» para alcanzar lo
+  último grabado, mientras la grabación sigue;
+- el tiempo y el tamaño grabados, los cortes si los hubo;
+- **Detener**, **Guardar en Descargas** (también a mitad de grabación: guarda lo que haya) y
+  **Descartar**.
+
+La grabación no depende de esa pestaña: si la cierras, sigue. El botón de video-down de la barra lista
+las grabaciones para volver a abrirlas.
+
+### Dónde se graba y cómo se guarda
+
+- **El motor va en el service worker.** Chrome frena los temporizadores de las pestañas en segundo
+  plano: tras 5 minutos solo despiertan una vez por minuto, y un directo que se lee cada pocos segundos
+  perdería segmentos. El service worker no tiene ese freno y se mantiene vivo mientras graba.
+- **Lo grabado va al disco a medida que llega**, a una base de datos del navegador, trozo a trozo. Una
+  grabación de horas no tiene que caber en memoria.
+- **Al guardar:**
+
+  | Lo grabado | Fichero |
+  |---|---|
+  | Captura del reproductor, o directo que ya viene en MP4 fragmentado | `.mp4` tal cual, de cualquier tamaño |
+  | Directo en MPEG-TS (lo más habitual en HLS) | `.mp4` sin recodificar con ffmpeg.wasm hasta 1 GB; por encima, `.ts`, que abren VLC y casi todos los reproductores |
+  | Directo con audio y vídeo por separado | Un `.mp4` hasta 1 GB; por encima, vídeo y audio en dos ficheros |
+
+- Lo grabado sigue en el navegador hasta que pulsas «Descartar»: así puedes guardarlo otra vez o
+  recuperarlo si algo se cierra.
+
 ## Diagrama de decisión
 
 ```mermaid
@@ -285,7 +357,7 @@ flowchart TD
     N1 -- Sí --> YT[yt-dlp + ffmpeg nativo]
     N1 -- No --> NEED[Explica cómo instalarlo]
     C -- No --> D{¿Es un directo?}
-    D -- Sí --> LIVE[Aviso: no se graban directos]
+    D -- Sí --> LIVE[No se descarga: se graba<br/>con el botón rojo]
     D -- No --> E{¿Fichero directo<br/>.mp4, .webm…?}
     E -- Sí --> DIRECT[chrome.downloads<br/>sin conversión]
     E -- No --> F{¿Manifiesto HLS o DASH<br/>detectado?}
@@ -347,6 +419,8 @@ video-down/
 │     ├─ content.ts           Detección por marco y arranque del icono
 │     ├─ content/
 │     │  ├─ main-world.ts     Dentro de la página: DRM (EME), copia de las listas que lee el reproductor y cambios de dirección
+│     │  ├─ capture.ts        Captura del reproductor (MediaRecorder) hacia el service worker
+│     │  ├─ permalinks.ts     Enlace propio de un vídeo visto en un muro
 │     │  ├─ video-facts.ts    Lee src, <source> y estado de cada <video>
 │     │  └─ overlay/          Icono y menú (Shadow DOM cerrado)
 │     ├─ core/
@@ -356,12 +430,16 @@ video-down/
 │     │  ├─ diagnostics.ts    Informe de diagnóstico (sin parámetros de las URL)
 │     │  ├─ parsers/master-discovery.ts   Dónde buscar la master de una variante suelta
 │     │  ├─ detection/playlist-bodies.ts  Copias de las listas tal como las recibió el reproductor
+│     │  ├─ native/site-session.ts       Tu sesión de una web, prestada a yt-dlp solo cuando la pide
+│     │  ├─ recording/        Grabación: copia de directos HLS, fragmentos MP4 de la captura,
+│     │  │                    listas del diferido, perfiles, almacén y gestor
 │     │  ├─ native/           Cliente del componente nativo
 │     │  ├─ detection/        Detección de HLS, DASH y ficheros (de Media Bridge)
 │     │  ├─ downloader/       Descarga de segmentos, reintentos y AES-128 (de Media Bridge)
 │     │  └─ ffmpeg/           Puente con el offscreen document (de Media Bridge)
 │     ├─ offscreen/           ffmpeg.wasm
-│     ├─ popup/               Lista de descargas y estado del componente nativo
+│     ├─ recorder/            Pestaña de grabación: diferido con hls.js, detener, guardar, descartar
+│     ├─ popup/               Lista de descargas y grabaciones, y estado del componente nativo
 │     └─ options/             Ajustes, estado del componente e instrucciones
 ├─ native-host/               Componente nativo (Deno, sin dependencias de terceros)
 │  ├─ src/protocol.ts         Protocolo compartido con la extensión, con su validación
@@ -490,6 +568,10 @@ servidor propio. Es más trabajo de montar y queda como opción.
   cambios de dirección hechos con la API History. No cambia lo que la página recibe. Como ese entorno
   pertenece a la página, la extensión no se fía de lo que informa: solo usa una URL, y su copia, si el
   service worker vio que la página o su service worker la pidieron de verdad.
+- **Grabación:** la captura solo acepta datos por el canal del marco que la empezó y comprueba que sean
+  MP4 válido; el reproductor en diferido no sale a la red (sirve lo grabado desde la base de datos y
+  rechaza cualquier otra dirección); la copia de un directo usa las mismas reglas de cabeceras temporales
+  que las descargas, y al arrancar Chrome se borran las que hubiera dejado un corte.
 - **Búsqueda de la master acotada:** como mucho cuatro peticiones `GET` al mismo servidor de la variante,
   con su mismo token, y solo se acepta una master que incluya esa variante.
 - **Informe de diagnóstico sin secretos:** las direcciones se guardan sin parámetros ni fragmento, solo en la
@@ -571,9 +653,9 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 45) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, y cuándo y qué sesión se presta a yt-dlp | `pnpm test` |
+| Unitarias de la extensión (Vitest, 57) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido y perfiles de captura | `pnpm test` |
 | Unitarias del componente nativo (Deno, 16) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) y formato del fichero de cookies | `deno task test` |
-| Extremo a extremo (Playwright, 22 + 4 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Extremo a extremo (Playwright, 27 + 5 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, grabación de un directo HLS simulado (copia exacta, diferido y MP4), captura del reproductor con los cuatro perfiles (diferido y MP4), DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador, **comparación de calidades con yt-dlp** como segunda opinión y **muro de una web con sesión**: enlace propio de la publicación, sesión prestada para consultar y para descargar (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:
@@ -613,7 +695,9 @@ Gatekeeper, y cargar la extensión en Google Chrome para Mac.
 - **YouTube y redes sociales necesitan el componente nativo.** Si cambian su protocolo, puede hacer falta
   actualizar yt-dlp desde las opciones.
 - **ffmpeg.wasm tiene un límite de unos 2 GB** por fichero. Por encima se usa el componente nativo si está.
-- **No graba directos** en esta versión.
+- **Grabación:** la copia exacta solo existe para directos HLS; un directo DASH se graba con la captura del
+  reproductor. La captura necesita que la pestaña del vídeo siga reproduciendo y conviene que esté visible.
+  Lo grabado ocupa espacio en el navegador hasta que lo descartas.
 - **No descarga contenido con DRM**, por decisión explícita.
 - **Paso manual al instalar:** cargar la extensión descomprimida, por la restricción de Chrome explicada arriba.
 - **Navegadores:** pensada y probada para **Google Chrome**. Los instaladores registran también el

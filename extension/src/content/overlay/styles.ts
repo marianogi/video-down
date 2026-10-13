@@ -71,6 +71,13 @@ export const OVERLAY_CSS = `
 .vd-trigger:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; opacity: 1; }
 .vd-trigger svg { width: 18px; height: 18px; display: block; }
 .vd-trigger[data-state="drm"] { background: rgba(120, 53, 15, 0.85); }
+.vd-rec svg circle { fill: #ef4444; }
+.vd-rec.vd-recording { opacity: 1; background: #dc2626; border-color: #fecaca; }
+.vd-rec.vd-recording svg circle { fill: #ffffff; animation: vd-blink 1.2s ease-in-out infinite; }
+@keyframes vd-blink { 50% { opacity: 0.3; } }
+.vd-section { margin: 12px 0 2px; font-weight: 600; }
+.vd-section:first-of-type { margin-top: 0; }
+.vd-recording-now { margin: 0 0 6px; font-weight: 600; color: #dc2626; font-variant-numeric: tabular-nums; }
 .vd-trigger .vd-ring {
   position: absolute;
   inset: -1px;
@@ -218,11 +225,14 @@ export const OVERLAY_CSS = `
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vd-rec.vd-recording svg circle { animation: none; }
   .vd-trigger, .vd-progress > span { transition: none; }
   .vd-progress.vd-indeterminate > span { animation: none; width: 100%; opacity: 0.5; }
 }
 `;
 
 export const DOWNLOAD_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>`;
+
+export const REC_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>`;
 
 export const LOCK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>`;

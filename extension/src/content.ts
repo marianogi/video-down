@@ -194,6 +194,8 @@ async function main(): Promise<void> {
       }
     } else if (message?.type === MessageType.DOWNLOAD_PROGRESS) {
       overlay?.onProgress(message.payload as ProgressPush);
+    } else if (message?.type === MessageType.RECORDING_PROGRESS) {
+      overlay?.onRecordingProgress(message.payload);
     }
     return false;
   });

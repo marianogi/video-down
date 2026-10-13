@@ -62,6 +62,19 @@ writeFileSync(join(out, "hls", "master.m3u8"), [
   writeFileSync(join(dir, "clip.m3u8"), ["#EXTM3U", "#EXT-X-VERSION:3", ...variants, ""].join(String.fromCharCode(10)));
 }
 
+// 2c. Material for a simulated live stream: 30 s cut in 2 s segments. The e2e server plays them
+//     in a loop as a live playlist that advances with the clock (/live/…).
+{
+  const dir = join(out, "live");
+  mkdirSync(dir, { recursive: true });
+  run([
+    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=30",
+    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=30",
+    ...h264, "-b:v", "500k", "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod",
+    "-hls_segment_filename", "seg%03d.ts", "index.m3u8",
+  ], dir);
+}
+
 // 3. HLS encrypted with AES-128 (clear key published in the playlist: NOT DRM)
 {
   const dir = join(out, "hls-aes");
@@ -156,7 +169,7 @@ ${join(dir, "enc.key")}
   writeFileSync(join(out, "dash", "widevine.mpd"), mpd);
 }
 
-for (const f of ["clip-360.mp4", "hls/master.m3u8", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
+for (const f of ["clip-360.mp4", "hls/master.m3u8", "live/seg014.ts", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
   "hls-aes-zeroiv/index.m3u8", "hls-byterange/index.m3u8", "hls-garbage/index.m3u8", "dash/manifest.mpd", "dash/widevine.mpd"]) {
   if (!existsSync(join(out, f))) throw new Error(`missing ${f}`);
 }

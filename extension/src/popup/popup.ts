@@ -7,6 +7,7 @@ import { h, localize, sendMessage } from "../ui/dom";
 import { t, formatBytes, formatEta } from "../shared/i18n";
 import { MessageType, type NativeStatusReply, type ProgressPush } from "../shared/messages";
 import { DownloadStage, type DownloadState } from "../core/types";
+import { listRecordings, type RecordingInfo } from "../core/recording/store";
 
 const list = document.getElementById("list") as HTMLUListElement;
 const empty = document.getElementById("empty") as HTMLParagraphElement;
@@ -116,7 +117,45 @@ async function loadNative(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------- recordings
+
+function recordingClock(seconds: number): string {
+  const s = Math.floor(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function recordingNode(r: RecordingInfo): HTMLLIElement {
+  const state =
+    r.state === "recording" ? t("recStateRecording") : r.state === "ended" ? t("recStateEnded") : r.state === "error" ? t("recStateError") : t("recStateStopped");
+  const open = h("button", { className: "link", text: t("popupOpenRecording"), attrs: { type: "button" } });
+  open.addEventListener("click", () => {
+    void chrome.tabs.create({ url: chrome.runtime.getURL(`recorder/recorder.html?id=${r.id}`) });
+    window.close();
+  });
+  return h("li", { className: "item" }, [
+    h("p", { className: "item-title", text: r.title, attrs: { title: r.title } }),
+    h("p", { className: "item-meta", text: [r.label, new Date(r.createdAt).toLocaleString()].join(" · ") }),
+    h("p", {
+      className: `item-status ${r.state === "recording" ? "error" : "muted"}`,
+      text: [state, recordingClock(r.duration), formatBytes(r.bytes) || "0 B"].join(" · "),
+    }),
+    h("div", { className: "item-actions" }, [open]),
+  ]);
+}
+
+async function loadRecordings(): Promise<void> {
+  const all = (await listRecordings().catch((): RecordingInfo[] => [])).slice(0, 10);
+  (document.getElementById("recordings-section") as HTMLElement).hidden = all.length === 0;
+  (document.getElementById("recordings") as HTMLUListElement).replaceChildren(...all.map(recordingNode));
+}
+
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === MessageType.RECORDING_PROGRESS) {
+    void loadRecordings();
+    return false;
+  }
   if (message?.type !== MessageType.DOWNLOAD_PROGRESS) return false;
   const push = message.payload as ProgressPush;
   const existing = items.get(push.id);
@@ -150,3 +189,4 @@ document.getElementById("options")!.addEventListener("click", () => {
 localize();
 void load();
 void loadNative();
+void loadRecordings();

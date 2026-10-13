@@ -1,0 +1,45 @@
+body { background: var(--surface-2); }
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+  display: grid;
+  gap: 16px;
+}
+
+.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.heading { min-width: 0; }
+.top h1 { margin: 0 0 4px; font-size: 18px; overflow-wrap: anywhere; }
+.top p { margin: 0; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.screen { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; }
+.screen video { width: 100%; height: 100%; display: block; background: #000; }
+.screen p { position: absolute; inset: auto 0 45% 0; margin: 0; text-align: center; color: #cbd5e1; }
+
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 0 4px; }
+
+.details { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.details dt { color: var(--text-2); }
+.details dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.chip.rec { color: #fff; background: #dc2626; border-color: #dc2626; }
+.chip.rec::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #fff;
+  animation: rec-blink 1.2s ease-in-out infinite;
+}
+@keyframes rec-blink { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .chip.rec::before { animation: none; } }

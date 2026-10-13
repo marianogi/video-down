@@ -65,6 +65,7 @@ await build({
         offscreen: resolve(src, "offscreen/offscreen.html"),
         popup: resolve(src, "popup/popup.html"),
         options: resolve(src, "options/options.html"),
+        recorder: resolve(src, "recorder/recorder.html"),
       },
       output: {
         format: "es",

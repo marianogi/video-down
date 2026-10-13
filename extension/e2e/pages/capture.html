@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Any player</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Any player</h1>
+<!-- Something playing on the page: what it shows is what gets recorded. -->
+<video src="/media/clip-360.mp4" muted loop autoplay playsinline></video>
+<script>
+  const v = document.querySelector("video");
+  v.addEventListener("playing", () => (document.title = "playing"), { once: true });
+  v.play().catch(() => undefined);
+</script>
+</body></html>

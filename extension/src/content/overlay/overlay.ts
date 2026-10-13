@@ -7,7 +7,9 @@
  * inside the page's own player markup.
  */
 
-import { OVERLAY_CSS, DOWNLOAD_ICON, LOCK_ICON } from "./styles";
+import { OVERLAY_CSS, DOWNLOAD_ICON, LOCK_ICON, REC_ICON } from "./styles";
+import { availableProfiles, startCapture, type CaptureHandle } from "../capture";
+import { bytesPerHour, codecLabel, profileById, videoBitrate } from "../../core/recording/profiles";
 import { t, formatBytes, formatEta } from "../../shared/i18n";
 import { route, type Route, type RouteInput, type DirectSource } from "../../core/router";
 import { permalinkNear } from "../permalinks";
@@ -61,11 +63,24 @@ interface Tracked {
   key: string;
   video: HTMLVideoElement;
   trigger: HTMLButtonElement;
+  /** Second button: record what this video plays */
+  recButton: HTMLButtonElement;
   ring: HTMLSpanElement;
   firstSeenAt: number;
   loadStartedAt: number;
   jobs: Map<string, JobView>;
   visible: boolean;
+  /** Recording started from this video, while it runs */
+  recording: { id: string; capture?: CaptureHandle; duration: number; bytes: number } | null;
+}
+
+/** What the worker reports about a recording (see core/recording/manager.ts). */
+interface RecordingPush {
+  id: string;
+  state?: string;
+  duration?: number;
+  bytes?: number;
+  deleted?: boolean;
 }
 
 /** Choice shown in the menu, already resolved to what the click must do. */
@@ -140,6 +155,8 @@ export class Overlay {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private counter = 0;
   private openKey: string | null = null;
+  /** Which of the two buttons opened the menu */
+  private menuKind: "download" | "record" = "download";
   private renderToken = 0;
   private lastRoute: Route | null = null;
   private pendingRetry: ReturnType<typeof setTimeout> | null = null;
@@ -210,6 +227,11 @@ export class Overlay {
   onMediaChanged(): void {
     const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
     if (!tr) return;
+    if (this.menuKind === "record") {
+      // A live playlist found while the menu is open adds the "exact copy" choices.
+      if (!tr.recording) void this.renderRecord(tr);
+      return;
+    }
     // A manifest that arrives late can turn "waiting" or "unknown stream" into a browser download.
     const r = this.lastRoute;
     const reroute =
@@ -231,6 +253,21 @@ export class Overlay {
   onNavigation(): void {
     this.cache.clear();
     if (this.openKey) this.close(false);
+  }
+
+  /** Progress of a recording started from one of this frame's videos. */
+  onRecordingProgress(push: RecordingPush): void {
+    for (const tr of this.tracked.values()) {
+      if (tr.recording?.id !== push.id) continue;
+      if (push.deleted || (push.state && push.state !== "recording")) {
+        tr.recording = null;
+      } else {
+        tr.recording.duration = push.duration ?? tr.recording.duration;
+        tr.recording.bytes = push.bytes ?? tr.recording.bytes;
+      }
+      this.updateRecButton(tr);
+      if (this.openKey === tr.key && this.menuKind === "record") void this.renderRecord(tr);
+    }
   }
 
   onProgress(push: ProgressPush): void {
@@ -322,15 +359,37 @@ export class Overlay {
     });
     this.root.insertBefore(trigger, this.popover);
 
+    const recButton = el("button", {
+      className: "vd-trigger vd-rec",
+      attrs: {
+        type: "button",
+        "aria-label": t("recordLabel"),
+        title: t("recordLabel"),
+        "aria-haspopup": "dialog",
+        "aria-expanded": "false",
+      },
+    });
+    recButton.innerHTML = REC_ICON;
+    recButton.style.display = "none";
+    recButton.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.openKey === key && this.menuKind === "record") this.close(true);
+      else void this.open(key, "record");
+    });
+    this.root.insertBefore(recButton, this.popover);
+
     const tr: Tracked = {
       key,
       video,
       trigger,
+      recButton,
       ring,
       firstSeenAt: Date.now(),
       loadStartedAt: 0,
       jobs: new Map(),
       visible: false,
+      recording: null,
     };
     const onLoadStart = () => {
       const previous = this.mediaFor(tr);
@@ -357,6 +416,9 @@ export class Overlay {
     if (this.openKey === tr.key) this.close(false);
     this.resizeObserver.unobserve(tr.video);
     tr.trigger.remove();
+    tr.recButton.remove();
+    // The element is gone: a capture of it cannot continue (the worker keeps what was recorded).
+    tr.recording?.capture?.stop();
     this.tracked.delete(tr.key);
     this.byVideo.delete(tr.video);
   }
@@ -402,16 +464,21 @@ export class Overlay {
       tr.visible = visible || this.openKey === tr.key;
       if (!tr.visible) {
         tr.trigger.style.display = "none";
+        tr.recButton.style.display = "none";
         continue;
       }
-      const left = Math.min(Math.max(r.left, 0) + OFFSET, vw - 42);
+      const left = Math.min(Math.max(r.left, 0) + OFFSET, vw - 82);
       const top = Math.min(Math.max(r.top, 0) + OFFSET, vh - 42);
       tr.trigger.style.display = "grid";
       tr.trigger.style.left = `${left}px`;
       tr.trigger.style.top = `${top}px`;
+      tr.recButton.style.display = "grid";
+      tr.recButton.style.left = `${left + 40}px`;
+      tr.recButton.style.top = `${top}px`;
       const hot =
         this.pointer.x >= r.left && this.pointer.x <= r.right && this.pointer.y >= r.top && this.pointer.y <= r.bottom;
       tr.trigger.classList.toggle("vd-hot", hot || tr.jobs.size > 0);
+      tr.recButton.classList.toggle("vd-hot", hot || !!tr.recording);
     }
     if (this.openKey) this.positionPopover();
   }
@@ -419,7 +486,7 @@ export class Overlay {
   private positionPopover(): void {
     const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
     if (!tr) return;
-    const b = tr.trigger.getBoundingClientRect();
+    const b = (this.menuKind === "record" ? tr.recButton : tr.trigger).getBoundingClientRect();
     const pw = this.popover.offsetWidth || 300;
     const ph = this.popover.offsetHeight || 200;
     const vw = window.innerWidth;
@@ -449,15 +516,17 @@ export class Overlay {
 
   // ------------------------------------------------------------ menu
 
-  private async open(key: string): Promise<void> {
+  private async open(key: string, kind: "download" | "record" = "download"): Promise<void> {
     const tr = this.tracked.get(key);
     if (!tr) return;
     if (this.openKey) this.close(false);
     this.openKey = key;
-    tr.trigger.setAttribute("aria-expanded", "true");
+    this.menuKind = kind;
+    (kind === "record" ? tr.recButton : tr.trigger).setAttribute("aria-expanded", "true");
     this.popover.hidden = false;
     this.scheduleLayout();
-    await this.renderRoute(tr);
+    if (kind === "record") await this.renderRecord(tr);
+    else await this.renderRoute(tr);
   }
 
   private close(restoreFocus: boolean): void {
@@ -470,8 +539,10 @@ export class Overlay {
     this.popover.replaceChildren();
     if (tr) {
       tr.trigger.setAttribute("aria-expanded", "false");
-      if (restoreFocus) tr.trigger.focus();
+      tr.recButton.setAttribute("aria-expanded", "false");
+      if (restoreFocus) (this.menuKind === "record" ? tr.recButton : tr.trigger).focus();
     }
+    this.menuKind = "download";
   }
 
   private frame(title: string, body: Node[]): void {
@@ -859,6 +930,163 @@ export class Overlay {
       options.viaPermalink ? t("triedPermalink", redactUrl(url)) : "",
     ].filter(Boolean).join(" ");
     this.renderChoices(result.title, intro, choices);
+  }
+
+  // ------------------------------------------------------------ recording
+
+  private updateRecButton(tr: Tracked): void {
+    const on = !!tr.recording;
+    tr.recButton.classList.toggle("vd-recording", on);
+    const label = t(on ? "recordingLabel" : "recordLabel");
+    tr.recButton.setAttribute("aria-label", label);
+    tr.recButton.title = label;
+  }
+
+  private optionList(options: Array<{ label: string; meta: string; onPick: (b: HTMLButtonElement) => void }>): HTMLUListElement {
+    const list = el("ul", { className: "vd-list" });
+    for (const o of options) {
+      const button = el("button", { className: "vd-option", attrs: { type: "button" } }, [
+        el("span", { className: "vd-option-main", text: o.label }),
+        el("span", { className: "vd-option-meta", text: o.meta }),
+      ]);
+      button.addEventListener("click", () => o.onPick(button));
+      list.appendChild(el("li", {}, [button]));
+    }
+    return list;
+  }
+
+  /** Menu of the record button: exact copy of a live stream, or capture of the player. */
+  private async renderRecord(tr: Tracked): Promise<void> {
+    const token = ++this.renderToken;
+    if (tr.recording) return this.renderRecordingNow(tr);
+    const media = this.mediaFor(tr);
+    if (tr.video.getAttribute(DRM_ATTR) || media.some((m) => m.hasDrm)) {
+      return this.frame(t("recordMenuTitle"), [
+        el("div", { className: "vd-notice", attrs: { role: "alert" } }, [el("strong", { text: t("recordDrm") })]),
+      ]);
+    }
+
+    const body: Node[] = [];
+    // Exact copy: the live HLS playlist of this video, quality by quality.
+    const live = media.find(
+      (m) => (m.format === VideoFormat.HLS || m.format === VideoFormat.M3U8) && m.isLive && !m.unsupported,
+    );
+    if (live) {
+      let reply: GetVariantsReply | null = null;
+      try {
+        reply = await this.cached(`manifest:${live.url}`, () => {
+          const text = this.deps.bodyFor(live.url);
+          return send<GetVariantsReply>(MessageType.GET_VARIANTS, { url: live.url, format: live.format, ...(text ? { text } : {}) });
+        });
+      } catch {
+        reply = null;
+      }
+      if (token !== this.renderToken) return;
+      const variants = reply?.success ? (reply.variants ?? []) : [];
+      if (variants.length > 0) {
+        body.push(el("p", { className: "vd-section", text: t("recordCopyTitle") }), el("p", { className: "vd-muted", text: t("recordCopyHint") }));
+        body.push(
+          this.optionList(
+            variants.map((v) => {
+              const label = v.label === "original" ? t("originalFile") : v.label;
+              const q = v.manifestQuality;
+              const tracks =
+                q?.videoPlaylistUrl && q.audioPlaylistUrl
+                  ? [
+                      { track: "video", playlistUrl: q.videoPlaylistUrl },
+                      { track: "audio", playlistUrl: q.audioPlaylistUrl },
+                    ]
+                  : [{ track: "main", playlistUrl: q?.videoPlaylistUrl ?? live.url }];
+              return {
+                label,
+                meta: v.bandwidth ? t("perHour", formatBytes(bytesPerHour(v.bandwidth))) : "HLS",
+                onPick: (b: HTMLButtonElement) => void this.beginRecording(tr, b, { mode: "copy", label, tracks }),
+              };
+            }),
+          ),
+        );
+      }
+    }
+
+    // Capture: whatever the player shows, re-encoded with the chosen profile.
+    const profiles = availableProfiles();
+    if (profiles.length > 0) {
+      body.push(el("p", { className: "vd-section", text: t("recordCaptureTitle") }), el("p", { className: "vd-muted", text: t("recordCaptureHint") }));
+      body.push(
+        this.optionList(
+          profiles.map(({ id, mimeType }) => {
+            const profile = profileById(id)!;
+            const bps = videoBitrate(profile, tr.video.videoWidth, tr.video.videoHeight) + profile.audioBitsPerSecond;
+            const label = t(`profile_${id}`);
+            return {
+              label,
+              meta: `${codecLabel(mimeType)} · ${t("perHour", formatBytes(bytesPerHour(bps)))}`,
+              onPick: (b: HTMLButtonElement) => void this.beginRecording(tr, b, { mode: "capture", label, profile: id }),
+            };
+          }),
+        ),
+      );
+    }
+    if (body.length === 0) body.push(el("p", { className: "vd-muted", text: t("recordUnsupported") }));
+    this.frame(t("recordMenuTitle"), body);
+  }
+
+  private renderRecordingNow(tr: Tracked): void {
+    const rec = tr.recording!;
+    const open = el("button", { className: "vd-action", text: t("recordOpen"), attrs: { type: "button" } });
+    open.addEventListener("click", () => void send(MessageType.OPEN_RECORDING, { id: rec.id }).catch(() => undefined));
+    const stop = el("button", { className: "vd-action vd-secondary", text: t("recordStop"), attrs: { type: "button" } });
+    stop.addEventListener("click", () => {
+      stop.disabled = true;
+      void send(MessageType.STOP_RECORDING, { id: rec.id }).catch(() => undefined);
+    });
+    const m = Math.floor(rec.duration / 60);
+    const s = String(Math.floor(rec.duration % 60)).padStart(2, "0");
+    this.frame(t("recordMenuTitle"), [
+      el("p", { className: "vd-recording-now", text: t("recordingNow", [`${m}:${s}`, formatBytes(rec.bytes) || "0 B"]) }),
+      el("p", { className: "vd-muted", text: t(rec.capture ? "recordCaptureKeep" : "recordCopyKeep") }),
+      open,
+      el("span", { text: " " }),
+      stop,
+    ]);
+  }
+
+  private async beginRecording(
+    tr: Tracked,
+    button: HTMLButtonElement,
+    choice:
+      | { mode: "copy"; label: string; tracks: Array<{ track: string; playlistUrl: string }> }
+      | { mode: "capture"; label: string; profile: string },
+  ): Promise<void> {
+    button.disabled = true;
+    const reply = await send<{ success: boolean; id?: string; error?: string }>(MessageType.START_RECORDING, {
+      ...choice,
+      title: pageTitle(),
+      pageUrl: location.href,
+    }).catch((err: unknown) => ({ success: false, error: err instanceof Error ? err.message : String(err) }) as { success: boolean; id?: string; error?: string });
+    if (!reply.success || !reply.id) {
+      button.disabled = false;
+      return this.renderError(reply.error || t("downloadFailed"));
+    }
+    const id = reply.id;
+    if (choice.mode === "capture") {
+      const handle = startCapture(tr.video, id, choice.profile, () => {
+        if (tr.recording?.id === id) {
+          tr.recording = null;
+          this.updateRecButton(tr);
+        }
+      });
+      if ("error" in handle) {
+        void send(MessageType.DISCARD_RECORDING, { id }).catch(() => undefined);
+        const key = handle.error === "protected" ? "recordProtected" : handle.error === "no-video" ? "recordNoVideo" : "recordUnsupported";
+        return this.renderError(t(key));
+      }
+      tr.recording = { id, capture: handle, duration: 0, bytes: 0 };
+    } else {
+      tr.recording = { id, duration: 0, bytes: 0 };
+    }
+    this.updateRecButton(tr);
+    this.renderRecordingNow(tr);
   }
 
   // ------------------------------------------------------------ downloads

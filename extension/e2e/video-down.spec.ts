@@ -262,6 +262,81 @@ test("2m · playlists fetched by the page's service worker are recognised", asyn
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
 });
 
+// ---------------------------------------------------------------- recording
+
+const recButton = (page: Page) => page.locator("video-down-overlay").getByRole("button", { name: /Record this video|Recording this video/ });
+
+/** The recorder page: wait for something recorded, stop, save, and check the file with ffprobe. */
+async function recordAndSave(recorder: Page, downloads: string, seconds: number) {
+  await expect(recorder.locator("#state")).toHaveText("Recording", { timeout: 20_000 });
+  await expect
+    .poll(async () => {
+      const [m, s] = ((await recorder.locator("#duration").textContent()) ?? "0:00").split(":").map(Number);
+      return (m ?? 0) * 60 + (s ?? 0);
+    }, { timeout: 60_000 })
+    .toBeGreaterThanOrEqual(seconds);
+  // The time-shift player plays what has been recorded so far.
+  await expect.poll(() => recorder.locator("#player").evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await recorder.locator("#stop").click();
+  await expect(recorder.locator("#state")).not.toHaveText("Recording", { timeout: 20_000 });
+  const since = Date.now() - 1000;
+  await recorder.locator("#save").click();
+  await expect(recorder.locator("#save-status")).toContainText("Saved to Downloads", { timeout: 120_000 });
+  await expect.poll(() => newestFile(downloads, since), { timeout: 15_000 }).not.toBeNull();
+  return newestFile(downloads, since)!;
+}
+
+function durationOf(file: string): number {
+  try {
+    return Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], { encoding: "utf8" }).trim());
+  } catch {
+    return 0;
+  }
+}
+
+test("10 · live HLS: exact copy, time-shift player, saved as MP4", async ({ page, baseUrl, downloads, extContext }) => {
+  await page.goto(`${baseUrl}/live.html`);
+  await recButton(page).click();
+  const copy = menu(page).getByRole("button", { name: /360p/ });
+  await expect(copy).toBeVisible({ timeout: 20_000 });
+  const opened = extContext.waitForEvent("page");
+  await copy.click();
+  const recorder = await opened;
+  await expect(recButton(page)).toHaveAccessibleName("Recording this video");
+  const file = await recordAndSave(recorder, downloads, 6);
+  await expect(recorder.locator("#save-status")).toContainText(".mp4");
+  expect(probe(file)).toMatchObject({ height: 360, video: "h264", audio: "aac" });
+  expect(durationOf(file)).toBeGreaterThanOrEqual(5);
+  await recorder.close();
+});
+
+for (const [profile, codecs] of [
+  ["Best quality", ["h264"]],
+  ["Balanced", ["vp9", "h264"]],
+  ["Small file", ["av1", "vp9"]],
+  ["Less CPU", ["h264"]],
+] as const) {
+  test(`11 · any player: capture with the "${profile}" profile, time-shift player, saved as MP4`, async ({ page, baseUrl, downloads, extContext }) => {
+    await page.goto(`${baseUrl}/capture.html`);
+    await expect(page).toHaveTitle("playing", { timeout: 10_000 });
+    await recButton(page).click();
+    await expect(menu(page).getByText("Capture the player")).toBeVisible({ timeout: 10_000 });
+    const option = menu(page).getByRole("button", { name: new RegExp(profile) });
+    test.skip((await option.count()) === 0, `this browser cannot record the "${profile}" profile`);
+    const opened = extContext.waitForEvent("page");
+    await option.click();
+    const recorder = await opened;
+    recorder.on("console", (m) => m.type() === "warning" && console.log(`[recorder] ${m.text()}`));
+    const file = await recordAndSave(recorder, downloads, 3);
+    await expect(recorder.locator("#save-status")).toContainText(".mp4");
+    const info = probe(file);
+    expect(codecs as readonly string[]).toContain(info.video);
+    expect(info.height).toBe(360);
+    expect(durationOf(file)).toBeGreaterThanOrEqual(2.5);
+    await recorder.close();
+  });
+}
+
 test("3 · DASH: video representations listed, audio merged", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/dash.html`);
   await trigger(page).click();

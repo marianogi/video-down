@@ -7,6 +7,31 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.0 (2026-10-14)
+
+**Grabar en directo, con diferido.** Un segundo botón, con un punto rojo, en cada vídeo:
+
+- **Copia exacta del directo** (HLS): guarda los segmentos originales a medida que aparecen, sin
+  recodificar. Eliges la calidad y ves cuánto ocupa por hora. Segmentos por número de secuencia, inicio
+  en el borde del directo, AES-128 descifrado, cortes marcados si un segmento se pierde, y cierre solo
+  cuando la emisión termina. Cualquier otro cifrado es DRM y no se graba.
+- **Captura del reproductor** (cualquier vídeo sin DRM): `captureStream()` + `MediaRecorder` en MP4
+  fragmentado, con cuatro perfiles: máxima calidad (H.264 + AAC), equilibrado (VP9 + Opus), archivo
+  pequeño (AV1 + Opus) y menos CPU (H.264 Baseline). Fotograma clave cada 2 s.
+- **Pestaña de grabación** con reproductor en diferido (hls.js sirviendo lo grabado desde la base de
+  datos del navegador, sin red): pausar, retroceder, «Ir al directo». Detener, guardar en Descargas
+  (también a mitad) y descartar. Si se cierra la pestaña, la grabación sigue; el popup las lista.
+- **El motor va en el service worker**, que no sufre el freno de temporizadores de las pestañas en
+  segundo plano (una vez por minuto tras 5 minutos), y lo grabado va al disco trozo a trozo.
+- **Guardado:** MP4 tal cual (captura o directo en fMP4), MPEG-TS pasado a MP4 sin recodificar hasta
+  1 GB (`.ts` por encima), y audio y vídeo separados unidos hasta 1 GB (dos ficheros por encima).
+- MediaRecorder escribe VP9 con nivel 0, que el propio reproductor de Chrome rechaza: se corrige en la
+  cabecera de la grabación.
+- Al arrancar Chrome se borran las reglas de cabeceras que hubiera dejado un trabajo cortado.
+- Nueva dependencia: hls.js 1.7.3 (Apache-2.0, sin dependencias ni scripts de instalación).
+- Pruebas: 57 unitarias; de extremo a extremo, un directo HLS simulado (copia, diferido, MP4) y la
+  captura con los cuatro perfiles.
+
 ## 0.1.7 (2026-10-14)
 
 Vídeos de webs que exigen sesión (Instagram, Facebook, Vimeo privado, plataformas de cursos…) y vídeos

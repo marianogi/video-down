@@ -1,5 +1,5 @@
 {
-  "videodown": "0.1.7",
+  "videodown": "0.2.0",
   "hostName": "dev.marianogutierrez.videodown",
   "extensionId": "hmniedmoneiciocknghpbdkhkmdcpgdf",
   "deno": {

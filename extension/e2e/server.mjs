@@ -8,6 +8,8 @@
 //   /once/master.m3u8?token=…  single-use link: the first request gets the playlist, any repeat a 403
 //   /once/…              the variants and segments of that master (no token needed)
 //   /opaque/master.m3u8  "playlist" that is not HLS (encrypted bytes), served as mpegurl
+//   /live/master.m3u8    a live stream: its playlist (/live/v360.m3u8) advances with the clock,
+//                        2 s per segment, looping over fixtures/media/live with a discontinuity
 //   /session/…           only with the cookie vdsession=ok (403 otherwise), like a site behind a
 //                        login: post.html is a post page with its video, clip.mp4 that video
 //   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc, and the
@@ -33,6 +35,20 @@ const TYPES = {
 };
 
 const usedTokens = new Set();
+const LIVE_START = Date.now();
+const LIVE_LOOP = 15; // segments in fixtures/media/live
+const LIVE_WINDOW = 6;
+
+function livePlaylist() {
+  const now = Math.floor((Date.now() - LIVE_START) / 2000) + LIVE_WINDOW;
+  const first = now - LIVE_WINDOW + 1;
+  const lines = ["#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-TARGETDURATION:2", `#EXT-X-MEDIA-SEQUENCE:${first}`];
+  for (let seq = first; seq <= now; seq++) {
+    if (seq % LIVE_LOOP === 0) lines.push("#EXT-X-DISCONTINUITY");
+    lines.push("#EXTINF:2.000,", `seg/${seq}.ts`);
+  }
+  return lines.join("\n") + "\n";
+}
 
 export function startServer(port = 0) {
   const server = createServer((req, res) => {
@@ -59,6 +75,24 @@ export function startServer(port = 0) {
       }
       usedTokens.add(token);
       pathname = "/media/hls/master.m3u8";
+    } else if (pathname.startsWith("/live/")) {
+      const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
+      if (pathname === "/live/master.m3u8") {
+        res.writeHead(200, { ...cors, "Content-Type": TYPES[".m3u8"] }).end(
+          '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=640x360,CODECS="avc1.64001e,mp4a.40.2"\nv360.m3u8\n',
+        );
+        return;
+      }
+      if (pathname === "/live/v360.m3u8") {
+        res.writeHead(200, { ...cors, "Content-Type": TYPES[".m3u8"] }).end(livePlaylist());
+        return;
+      }
+      const m = pathname.match(/^\/live\/seg\/(\d+)\.ts$/);
+      if (!m) {
+        res.writeHead(404).end("not found");
+        return;
+      }
+      pathname = `/media/live/seg${String(Number(m[1]) % LIVE_LOOP).padStart(3, "0")}.ts`;
     } else if (pathname.startsWith("/session/")) {
       if (!/(?:^|;\s*)vdsession=ok(?:;|$)/.test(req.headers.cookie ?? "")) {
         res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: log in first");

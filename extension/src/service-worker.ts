@@ -43,6 +43,16 @@ import { needsSession, sessionCookiesFor } from "./core/native/site-session";
 import { isYoutubeHost } from "./core/router";
 import type { ProbeResultResponse, SessionCookie } from "@host/protocol";
 import {
+  activeRecordingCount,
+  discardRecording,
+  markInterruptedRecordings,
+  onCapturePort,
+  recordingProgress,
+  setActivityListener,
+  startRecording,
+  stopRecording,
+} from "./core/recording/manager";
+import {
   nativeStatus,
   nativeProbe,
   nativeDownload,
@@ -93,8 +103,18 @@ const keepAlive = (
 )();
 
 function updateKeepAlive(): void {
-  keepAlive(browserJobs.size > 0);
+  // Recordings also keep the worker alive: they can last hours.
+  keepAlive(browserJobs.size > 0 || activeRecordingCount() > 0);
 }
+setActivityListener(() => {
+  updateKeepAlive();
+  void updateBadge();
+});
+
+// The page side of "capture the player" streams its bytes through a port.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.sender?.id !== chrome.runtime.id || !onCapturePort(port)) return;
+});
 
 /**
  * Close the ffmpeg.wasm document a while after the last browser job ends. Closing it at
@@ -139,7 +159,7 @@ function pushProgress(state: DownloadState, extra: Partial<ProgressPush> = {}): 
 }
 
 async function updateBadge(): Promise<void> {
-  const active = browserJobs.size + nativeJobs.size;
+  const active = browserJobs.size + nativeJobs.size + activeRecordingCount();
   try {
     await chrome.action.setBadgeBackgroundColor({ color: "#2563eb" });
     await chrome.action.setBadgeText({ text: active > 0 ? String(active) : "" });
@@ -1013,6 +1033,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!Number.isInteger(tabId) || tabId < 0) return false;
       return reply(buildDiagnostics(tabId).then((text) => ({ success: true, text })));
     }
+    case MessageType.START_RECORDING: {
+      const tab = sender.tab;
+      if (tab?.id === undefined) return false;
+      return reply(startRecording(message.payload, { tabId: tab.id, frameId: sender.frameId ?? 0, index: tab.index }));
+    }
+    case MessageType.STOP_RECORDING:
+      return reply(stopRecording(String(message.payload?.id ?? "")).then(() => ({ success: true })));
+    case MessageType.DISCARD_RECORDING:
+      return reply(discardRecording(String(message.payload?.id ?? "")).then(() => ({ success: true })));
+    case MessageType.OPEN_RECORDING: {
+      const recId = String(message.payload?.id ?? "");
+      if (!/^[a-z0-9]{1,40}$/.test(recId)) return false;
+      return reply(
+        chrome.tabs
+          .create({ url: chrome.runtime.getURL(`recorder/recorder.html?id=${recId}`), ...(sender.tab ? { index: sender.tab.index + 1 } : {}) })
+          .then(() => ({ success: true })),
+      );
+    }
+    case MessageType.GET_RECORDING:
+      return reply(recordingProgress(String(message.payload?.id ?? "")).then((r) => ({ success: !!r, recording: r })));
     case MessageType.OPEN_DIAGNOSTICS: {
       const tab = sender.tab;
       if (tab?.id === undefined) return false;
@@ -1064,6 +1104,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ------------------------------------------------------------------ startup
 
 async function cleanupStaleState(): Promise<void> {
+  await markInterruptedRecordings();
+  // Header rules of jobs cut short by a crash would otherwise stay forever. At browser start or
+  // install nothing is running, so every dynamic rule left is stale. (They only ever applied to
+  // the extension's own requests.)
+  const stale = await chrome.declarativeNetRequest.getDynamicRules().catch(() => []);
+  if (stale.length) {
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: stale.map((r) => r.id) }).catch(() => undefined);
+  }
   // Anything "in progress" from a previous worker lifetime is dead now.
   const all = await getAllDownloads();
   for (const d of all) {
