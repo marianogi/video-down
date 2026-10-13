@@ -16,6 +16,19 @@
       <p class="muted"><span data-i18n="optExtVersion"></span> <code id="ext-version"></code></p>
     </header>
 
+    <section id="diagnostics" class="card" aria-labelledby="diag-h" hidden>
+      <div class="row">
+        <h2 id="diag-h" data-i18n="diagTitle"></h2>
+        <span id="diag-copied" class="ok" aria-live="polite"></span>
+      </div>
+      <p class="muted" data-i18n="diagIntro"></p>
+      <div class="actions">
+        <button id="diag-copy" class="btn" type="button" data-i18n="diagCopy"></button>
+        <button id="diag-refresh" class="btn secondary" type="button" data-i18n="diagRefresh"></button>
+      </div>
+      <pre id="diag-text" class="diag" tabindex="0"></pre>
+    </section>
+
     <section id="welcome" class="card" aria-labelledby="welcome-h">
       <h2 id="welcome-h" data-i18n="optHowTitle"></h2>
       <ol class="steps">

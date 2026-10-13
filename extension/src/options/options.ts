@@ -111,6 +111,38 @@ $("native-update").addEventListener("click", async () => {
   void loadNative(true);
 });
 
+// ---------------------------------------------------------------- diagnostic report
+
+const diagParams = new URLSearchParams(location.search);
+const diagTab = Number(diagParams.get("diag"));
+
+async function loadDiagnostics(): Promise<void> {
+  const pre = $("diag-text");
+  type DiagReply = { success?: boolean; text?: string };
+  const reply = await sendMessage<DiagReply>(MessageType.GET_DIAGNOSTICS, { tabId: diagTab }).catch(() => null);
+  pre.textContent = reply?.text ?? t("diagUnavailable");
+}
+
+if (diagParams.has("diag") && Number.isInteger(diagTab) && diagTab >= 0) {
+  $("diagnostics").hidden = false;
+  $("diag-copy").addEventListener("click", async () => {
+    const copied = $("diag-copied");
+    try {
+      await navigator.clipboard.writeText($("diag-text").textContent ?? "");
+      copied.textContent = t("diagCopied");
+    } catch {
+      // Without clipboard access the text stays selectable in the box.
+      const range = document.createRange();
+      range.selectNodeContents($("diag-text"));
+      getSelection()?.removeAllRanges();
+      getSelection()?.addRange(range);
+    }
+    setTimeout(() => (copied.textContent = ""), 2500);
+  });
+  $("diag-refresh").addEventListener("click", () => void loadDiagnostics());
+  void loadDiagnostics().then(() => $("diagnostics").scrollIntoView());
+}
+
 localize();
 void loadNative();
 void showInstallSteps();

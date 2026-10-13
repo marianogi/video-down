@@ -187,13 +187,13 @@ test("2f · same, with variants and segments on another host that also checks th
   await downloadAndCheck(m, downloads, /720p/, { height: 720 });
 });
 
-test("2g · playlist that cannot be read again (single-use link): the menu says why", async ({ page, baseUrl }) => {
+test("2g · single-use playlist link: the player's own copy lists the qualities and the download works", async ({ page, baseUrl, downloads }) => {
+  // The extension cannot read this master again (403), but the page's player already did.
   await page.goto(`${baseUrl}/once.html`);
   await trigger(page).click();
-  await expect(menu(page).getByText("The video was found but could not be read")).toBeVisible({ timeout: 20_000 });
-  await expect(menu(page).getByText(/HTTP 403/)).toBeVisible();
-  await expect(menu(page).getByText(/127\.0\.0\.1:\d+\/once\/master\.m3u8/)).toBeVisible();
-  await expect(menu(page).getByText(/token=/)).toHaveCount(0);
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 20_000 });
+  await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
+  await downloadAndCheck(page, downloads, /360p/, { height: 360 });
 });
 
 test("2h · playlist in a platform's own encrypted format: explained, not broken", async ({ page, baseUrl }) => {
@@ -215,6 +215,50 @@ for (const [name, what] of [
     await downloadAndCheck(page, downloads, /Original file/, { height: 360 });
   });
 }
+
+test("2j · only one variant is requested: the master next to it is found and its qualities offered", async ({ page, baseUrl, downloads, extContext }) => {
+  // Unified Origin names and a token on every playlist: the variants listed by the found master
+  // must inherit the token of the playlist the player used.
+  await page.goto(`${baseUrl}/hls-variant-only.html`);
+  await trigger(page).click();
+  await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible({ timeout: 20_000 });
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible();
+  await downloadAndCheck(page, downloads, /360p/, { height: 360 });
+
+  // The diagnostic report tells what happened, without tokens.
+  const opened = extContext.waitForEvent("page");
+  await menu(page).getByRole("button", { name: "Diagnostic report" }).click();
+  const report = await opened;
+  await expect(report.locator("#diag-text")).toContainText("master-found", { timeout: 15_000 });
+  await expect(report.locator("#diag-text")).toContainText("/media/uni/clip.m3u8");
+  await expect(report.locator("#diag-text")).not.toContainText("token=abc");
+  await report.close();
+});
+
+test("2k · the page rewrites its own address while the same video plays: qualities are kept", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/hls-rewrite-url.html`);
+  await expect(page).toHaveTitle("rewritten", { timeout: 10_000 });
+  await page.waitForTimeout(1500); // longer than the extension's address polling
+  await trigger(page).click();
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
+});
+
+test("2l · single-page app loads another video: the previous one's qualities are gone", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/hls-spa.html`);
+  await expect(page).toHaveTitle("second", { timeout: 15_000 });
+  await trigger(page).click();
+  await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toHaveCount(0);
+});
+
+test("2m · playlists fetched by the page's service worker are recognised", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/swtest/sw.html`);
+  await expect(page).toHaveTitle("controlled", { timeout: 15_000 });
+  await trigger(page).click();
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
+});
 
 test("3 · DASH: video representations listed, audio merged", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/dash.html`);

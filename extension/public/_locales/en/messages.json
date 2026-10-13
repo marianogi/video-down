@@ -106,5 +106,13 @@
   "optLegalTitle": { "message": "Responsible use" },
   "optLegal1": { "message": "Only download videos you hold rights to or whose licence allows it. You decide what you download and you are responsible for it." },
   "optLegal2": { "message": "video-down does not download DRM-protected content and does not circumvent any technical protection measure." },
-  "optCredits": { "message": "Based on Media Bridge (MIT). Uses yt-dlp (Unlicense), FFmpeg (LGPL/GPL) and Deno (MIT)." }
+  "optCredits": { "message": "Based on Media Bridge (MIT). Uses yt-dlp (Unlicense), FFmpeg (LGPL/GPL) and Deno (MIT)." },
+  "diagLink": { "message": "Diagnostic report" },
+  "popupDiag": { "message": "Diagnostics" },
+  "diagTitle": { "message": "Tab diagnostics" },
+  "diagIntro": { "message": "What video-down saw in that tab: the video playlists the page requested and what it did with each one. Addresses are shown without their parameters, so no tokens or signatures are included. If a video is not offered as expected, copy the report and paste it into your message." },
+  "diagCopy": { "message": "Copy report" },
+  "diagRefresh": { "message": "Refresh" },
+  "diagCopied": { "message": "Copied" },
+  "diagUnavailable": { "message": "The report for that tab could not be generated. It may have been closed." }
 }

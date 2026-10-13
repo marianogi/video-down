@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Only one variant requested</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Only one variant requested</h1>
+<!-- The player is handed a single quality (Unified Origin naming, signed URL). The master sits
+     next to it as clip.m3u8 and lists that quality and another one. -->
+<video controls muted></video>
+<script type="module">import { msePlayer } from "./player.js"; msePlayer("/media/uni/clip-audio_eng=96000-video_eng=1800000.m3u8?token=abc");</script>
+</body></html>

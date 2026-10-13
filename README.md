@@ -39,6 +39,10 @@ Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo de
 El fichero se guarda en la carpeta de descargas de Chrome. En las opciones se puede pedir que Chrome
 pregunte dónde guardar cada descarga.
 
+Si un vídeo no sale como esperabas (faltan calidades, no se encuentra…), el enlace «Informe de
+diagnóstico» al pie del menú cuenta qué ha visto la extensión en esa pestaña. Ver el
+[caso 11](#informe-de-diagnóstico).
+
 ---
 
 ## Las vías de descarga: toda la casuística
@@ -58,7 +62,7 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 | # | Lo que hay en la página | Vía | Cómo se descarga | Resoluciones que ofrece | Requisitos |
 |---|---|---|---|---|---|
 | 1 | Fichero de vídeo normal: `<video src="….mp4">`, `.webm`, `.mov`, `.ogv`… | Navegador | Descarga directa con el gestor de descargas de Chrome. Ni se toca ni se convierte. | Una por cada `<source>` del vídeo. El tamaño se averigua con una petición `HEAD`. | Ninguno |
-| 2 | Streaming **HLS** (`.m3u8`) sin cifrado o con AES-128 | Navegador | Se bajan los segmentos, se descifran si hace falta, y **ffmpeg.wasm** los une en un MP4 sin recodificar. | Una por cada variante del *master playlist* (1080p, 720p…), con tamaño estimado. | Ninguno |
+| 2 | Streaming **HLS** (`.m3u8`) sin cifrado o con AES-128 | Navegador | Se bajan los segmentos, se descifran si hace falta, y **ffmpeg.wasm** los une en un MP4 sin recodificar. | Una por cada variante del *master playlist* (1080p, 720p…), con tamaño estimado. Si la página solo pidió una calidad, se busca la master junto a ella. | Ninguno |
 | 3 | Streaming **DASH** (`.mpd`) sin DRM | Navegador | Se bajan por separado los segmentos de vídeo y de audio, y **ffmpeg.wasm** los mezcla en un MP4. | Una por cada `Representation` de vídeo. El audio se añade solo. | Ninguno |
 | 4 | **YouTube** (vídeos, Shorts y vídeos incrustados) | Componente nativo | yt-dlp obtiene los formatos y los descarga. El ffmpeg instalado une vídeo y audio en un MP4. | Todas las de YouTube (144p a 4K u 8K), con preferencia por H.264 cuando existe. | Componente nativo |
 | 5 | Reproductor con **formato propio** (`<video src="blob:…">` sin manifiesto HLS ni DASH reconocible) | Componente nativo | yt-dlp reconoce más de 1.000 sitios (Vimeo, Twitch, TikTok, Instagram, X…) y descarga con su extractor. | Las que ofrezca el sitio. | Componente nativo |
@@ -67,7 +71,7 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 | 8 | Vídeo con **DRM** (Widevine, PlayReady, FairPlay, ClearKey) | Ninguna | Se muestra el aviso y no se ofrece descarga. | — | — |
 | 9 | Emisión **en directo** | Ninguna en esta versión | Se avisa de que no se graban directos. | — | — |
 | 10 | Vídeo que todavía no ha empezado a cargar | Espera | El menú dice «Esperando a que el vídeo empiece a cargar» y se actualiza solo. | — | — |
-| 11 | Lista detectada que no se puede leer (enlace caducado o de un solo uso, página de error, formato propio cifrado) | Ninguna, con diagnóstico | El menú explica el motivo exacto y ofrece «Reintentar»; si procede, también probar con yt-dlp. | — | — |
+| 11 | Lista detectada que no se puede leer (página de error, formato propio cifrado, o un enlace que caducó sin que el reproductor llegara a leerlo) | Ninguna, con diagnóstico | El menú explica el motivo exacto y ofrece «Reintentar»; si procede, también probar con yt-dlp. Un enlace de un solo uso que el reproductor sí leyó ya no llega aquí: se usa su copia (caso 2). | — | — |
 
 ### Caso 1. Fichero de vídeo directo
 
@@ -88,8 +92,29 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
   3. por su contenido: si una respuesta de texto que pidió la página empieza por `#EXTM3U`, es una lista HLS
      aunque se sirva como `text/plain` y sin extensión. Esto lo hace un script dentro de la página, y la
      extensión solo acepta la URL que informa tras comprobar que la página la pidió de verdad.
+- **La copia del reproductor.** Ese mismo script guarda el texto completo de cada lista tal como lo
+  recibió el reproductor. Si la extensión no puede volver a leerla (enlace de un solo uso, token que
+  caduca en segundos, CDN que solo responde al reproductor), las calidades salen de esa copia.
+- **Listas pedidas por un service worker de la página.** Esas peticiones no pertenecen a ninguna pestaña.
+  La extensión las apunta por el origen del service worker y acepta lo que informe el script de la página
+  si coincide ese origen.
 - **Resoluciones.** Se lee el *master playlist* y se ofrece una entrada por variante de vídeo.
   El tamaño se estima con el `BANDWIDTH` declarado y la duración del vídeo.
+- **Cuando la página solo pide una calidad.** Algunos reproductores reciben una sola variante, o leen la
+  master de una forma que la extensión no ve. Entonces se busca la master donde la dejan los empaquetadores
+  habituales, sin listas de sitios:
+
+  | Empaquetador o costumbre | Variante que pide la página | Master que se prueba |
+  |---|---|---|
+  | Unified Streaming | `nombre-audio_eng=128000-video_eng=2000000.m3u8` | `nombre.m3u8` |
+  | Wowza | `chunklist_w123_b800000.m3u8` | `playlist.m3u8` |
+  | nginx-vod, Kaltura | `index-v1-a1.m3u8` | `master.m3u8` |
+  | Codificadores con sufijo | `nombre_720p.m3u8` | `nombre.m3u8` |
+  | Una carpeta por calidad | `…/720p/index.m3u8` | `…/master.m3u8`, `…/playlist.m3u8` |
+
+  Se hacen como mucho cuatro intentos, con el mismo token que la variante, y solo se acepta una master
+  que incluya la lista que se está reproduciendo. Las calidades de esa master heredan el token si no
+  traen uno propio. Un intento fallido no se muestra como error: es una suposición, no un fallo de la página.
 - **Descarga.** Los segmentos (`.ts` o fMP4) se descargan en paralelo, con reintentos, y se guardan
   en IndexedDB. Si van cifrados con **AES-128** (clave pública publicada en el propio manifiesto, que no es
   DRM), se descifran con WebCrypto, siguiendo el estándar: si la lista no declara vector de inicialización,
@@ -102,6 +127,8 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 - **Guardado.** El MP4 se entrega a `chrome.downloads`.
 - **Respaldo automático.** Si algo falla en el navegador y el componente nativo está instalado, la misma
   descarga continúa sola con yt-dlp y el ffmpeg nativo; el menú lo indica.
+- **Master que ya no se puede leer.** Con la calidad elegida, la descarga va directa a ella aunque la
+  master no responda una segunda vez.
 - **Reproductores incrustados y CDN que comprueban quién pide.** Es muy habitual que el vídeo esté en un
   `<iframe>` de otro sitio (plataformas de cursos, alojadores de vídeo) y que su CDN solo responda si la
   petición lleva el `Origin` y el `Referer` de ese reproductor. La extensión hace lo mismo que el reproductor,
@@ -182,6 +209,13 @@ Cada `<video>` tiene su propio icono. Como un `blob:` no dice de qué manifiesto
 asocia cada manifiesto al vídeo que empezó a cargar más cerca en el tiempo. Si no lo puede saber,
 ofrece todos los manifiestos detectados en ese marco.
 
+**Cambios de dirección y webs de una sola página.** Que la dirección cambie no significa que haya otro
+vídeo: muchas páginas reescriben la suya mientras el mismo vídeo sigue sonando, para quitar un token o
+apuntar el minuto. Por eso las listas detectadas solo se descartan cuando, tras un cambio de dirección,
+un reproductor vuelve a cargar. Entonces se descarta lo que estaba asociado a ese reproductor y se pidió
+antes del cambio. El script de la página avisa del cambio al instante, cuando se hace con la API History;
+cualquier otro se nota con una comprobación cada segundo.
+
 ### Caso 11. El vídeo se encuentra, pero no se puede leer
 
 A veces la extensión ve pasar la lista del vídeo, pero al leerla no obtiene una lista válida. En ese caso
@@ -190,13 +224,34 @@ lista detectada (servidor y ruta, nunca los tokens de la URL).
 
 | Lo que pasó | Lo que dice el menú | Qué se puede hacer |
 |---|---|---|
-| El servidor rechaza la lectura (HTTP 401, 403…) | Rechazo con su código | El enlace puede ser de un solo uso o haber caducado: dale al play y pulsa «Reintentar». Si el componente nativo está instalado, también se ofrece probar con yt-dlp. |
+| El servidor rechaza la lectura (HTTP 401, 403…) y el reproductor no llegó a leerla | Rechazo con su código | El enlace puede haber caducado: dale al play y pulsa «Reintentar». Si el componente nativo está instalado, también se ofrece probar con yt-dlp. |
 | El servidor devuelve una página web o datos JSON | Página o datos en lugar de la lista | Suele indicar sesión o enlace caducados. «Reintentar». |
 | La lista no es HLS ni DASH estándar (bytes cifrados o formato propio) | Lista cifrada o en formato propio | Nada: es una protección de la plataforma y video-down no la rompe, igual que con el DRM. |
 | No hay conexión con el servidor | Error de conexión | «Reintentar». |
 
 «Reintentar» vuelve a leer las listas que fallaron. Además, si el reproductor vuelve a pedir la misma lista
 con un token nuevo, la extensión adopta automáticamente la URL más reciente.
+
+### Informe de diagnóstico
+
+Cuando un vídeo no sale como se esperaba, el informe dice qué ha visto la extensión en esa pestaña, sin
+abrir las herramientas de desarrollo. Se abre desde el enlace **«Informe de diagnóstico»** al pie del menú
+del vídeo, o desde el botón **«Diagnóstico»** del popup. Tiene un botón para copiarlo.
+
+Contiene, por orden de tiempo:
+
+- la versión de la extensión, el sistema, el navegador y el estado del componente nativo;
+- los marcos de la página que han tenido actividad de vídeo;
+- cada lista HLS o DASH que pidió la página: desde qué marco o desde un service worker, el código HTTP y el
+  tipo de contenido;
+- las listas que el reproductor leyó y la extensión aceptó;
+- lo que concluyó cada marco: master con cuántas variantes, variante de una master, lista suelta, master
+  encontrada junto a una variante, fallo de lectura con su motivo, cambio de dirección, recarga del
+  reproductor y qué ofreció el menú.
+
+Las direcciones van con servidor y ruta, **sin parámetros**: nunca incluye tokens ni firmas. El informe se
+guarda en la memoria de sesión del navegador, se borra al recargar la pestaña o cerrar Chrome, y nunca
+sale del equipo salvo que lo copies tú.
 
 ---
 
@@ -271,13 +326,16 @@ video-down/
 │     ├─ service-worker.ts    Coordina: red, descargas, componente nativo y progreso
 │     ├─ content.ts           Detección por marco y arranque del icono
 │     ├─ content/
-│     │  ├─ main-world.ts     Detección de DRM (EME) dentro de la página
+│     │  ├─ main-world.ts     Dentro de la página: DRM (EME), copia de las listas que lee el reproductor y cambios de dirección
 │     │  ├─ video-facts.ts    Lee src, <source> y estado de cada <video>
 │     │  └─ overlay/          Icono y menú (Shadow DOM cerrado)
 │     ├─ core/
 │     │  ├─ router.ts         Decide la vía de cada vídeo (la casuística de arriba)
 │     │  ├─ binding.ts        Asocia manifiestos y vídeos
 │     │  ├─ variants.ts       Resoluciones de HLS y DASH
+│     │  ├─ diagnostics.ts    Informe de diagnóstico (sin parámetros de las URL)
+│     │  ├─ parsers/master-discovery.ts   Dónde buscar la master de una variante suelta
+│     │  ├─ detection/playlist-bodies.ts  Copias de las listas tal como las recibió el reproductor
 │     │  ├─ native/           Cliente del componente nativo
 │     │  ├─ detection/        Detección de HLS, DASH y ficheros (de Media Bridge)
 │     │  ├─ downloader/       Descarga de segmentos, reintentos y AES-128 (de Media Bridge)
@@ -401,10 +459,16 @@ servidor propio. Es más trabajo de montar y queda como opción.
   No tiene `tabs`, `scripting`, `identity` ni recursos accesibles desde las webs.
 - **Interfaz aislada:** el icono y el menú viven en un Shadow DOM cerrado. La página no puede leerlos
   ni cambiarlos, y todo el texto que llega de la web se pinta como texto, nunca como HTML.
-- **Script de página mínimo:** vigila las APIs de EME sin tocar claves ni licencias, y mira solo el
-  comienzo de las respuestas de texto que pide la página para reconocer listas HLS o DASH. No cambia lo que
-  la página recibe. Como ese entorno pertenece a la página, la extensión no se fía de lo que informa:
-  solo usa una URL si el service worker vio que la página la pidió de verdad.
+- **Script de página mínimo:** vigila las APIs de EME sin tocar claves ni licencias, y lee una copia de las
+  respuestas de texto que pide la página: si empiezan como una lista HLS o DASH, la lee entera (hasta 2 MB);
+  si no, la abandona en el primer trozo, así que nunca acumula vídeo ni descargas. Avisa también de los
+  cambios de dirección hechos con la API History. No cambia lo que la página recibe. Como ese entorno
+  pertenece a la página, la extensión no se fía de lo que informa: solo usa una URL, y su copia, si el
+  service worker vio que la página o su service worker la pidieron de verdad.
+- **Búsqueda de la master acotada:** como mucho cuatro peticiones `GET` al mismo servidor de la variante,
+  con su mismo token, y solo se acepta una master que incluya esa variante.
+- **Informe de diagnóstico sin secretos:** las direcciones se guardan sin parámetros ni fragmento, solo en la
+  memoria de sesión del navegador, y solo lo leen las páginas de la propia extensión.
 - **Cabeceras prestadas con límites:** el `Origin` y el `Referer` del reproductor se añaden solo a
   peticiones de la propia extensión, solo hacia los servidores que aparecen en las listas del vídeo, y
   solo mientras dura la lectura o la descarga.
@@ -480,9 +544,9 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 33) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128 y rangos de bytes | `pnpm test` |
+| Unitarias de la extensión (Vitest, 42) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, búsqueda de la master, copias del reproductor e informe de diagnóstico | `pnpm test` |
 | Unitarias del componente nativo (Deno, 12) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging* | `deno task test` |
-| Extremo a extremo (Playwright, 18 + 4 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (diagnóstico HTTP 403), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Extremo a extremo (Playwright, 22 + 4 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador y **comparación de calidades con yt-dlp** como segunda opinión (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:

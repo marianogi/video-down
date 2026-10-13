@@ -205,6 +205,8 @@ export const OVERLAY_CSS = `
 .vd-path { word-break: break-all; color: var(--vd-text-2); font-size: 12px; }
 .vd-note { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--vd-border); }
 .vd-note .vd-muted { margin: 0 0 2px; font-size: 12px; }
+.vd-foot { margin-top: 10px; text-align: right; }
+.vd-link.vd-diag { font-size: 11px; color: var(--vd-text-2); }
 .vd-link {
   padding: 0;
   border: 0;

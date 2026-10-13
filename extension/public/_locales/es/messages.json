@@ -106,5 +106,13 @@
   "optLegalTitle": { "message": "Uso responsable" },
   "optLegal1": { "message": "Descarga solo vídeos sobre los que tengas derechos o cuya licencia lo permita. Tú decides qué descargas y respondes de ello." },
   "optLegal2": { "message": "video-down no descarga contenido protegido con DRM ni elude ninguna medida técnica de protección." },
-  "optCredits": { "message": "Basado en Media Bridge (MIT). Usa yt-dlp (Unlicense), FFmpeg (LGPL/GPL) y Deno (MIT)." }
+  "optCredits": { "message": "Basado en Media Bridge (MIT). Usa yt-dlp (Unlicense), FFmpeg (LGPL/GPL) y Deno (MIT)." },
+  "diagLink": { "message": "Informe de diagnóstico" },
+  "popupDiag": { "message": "Diagnóstico" },
+  "diagTitle": { "message": "Diagnóstico de la pestaña" },
+  "diagIntro": { "message": "Lo que video-down ha visto en esa pestaña: las listas de vídeo que pidió la página y qué hizo con cada una. Las direcciones van sin parámetros, así que no incluye tokens ni firmas. Si un vídeo no sale como esperabas, copia el informe y pégalo en tu mensaje." },
+  "diagCopy": { "message": "Copiar informe" },
+  "diagRefresh": { "message": "Actualizar" },
+  "diagCopied": { "message": "Copiado" },
+  "diagUnavailable": { "message": "No se ha podido generar el informe de esa pestaña. Puede que se haya cerrado." }
 }

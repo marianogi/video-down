@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Page rewrites its address</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Page rewrites its address</h1>
+<!-- Many players remove the token from the address, or add the playback time, while the same video keeps playing. -->
+<video controls muted></video>
+<script type="module">
+  import { msePlayer } from "./player.js";
+  await msePlayer("/media/hls/master.m3u8");
+  setTimeout(() => {
+    history.replaceState(null, "", `${location.pathname}?t=42`);
+    document.title = "rewritten";
+  }, 500);
+</script>
+</body></html>

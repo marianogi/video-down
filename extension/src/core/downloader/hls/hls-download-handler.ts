@@ -98,9 +98,18 @@ export class HlsDownloadHandler extends BasePlaylistHandler {
       let videoPlaylistText: string | null = null;
       let audioPlaylistText: string | null = null;
 
-      const masterPlaylistText = await this.fetchTextCancellable(masterPlaylistUrl);
+      // With a quality already chosen, the master is only read for its DRM markers, and those
+      // were checked when it was detected. A master that cannot be read twice (single-use or
+      // short-lived link) must not stop the download of the qualities it listed.
+      let masterPlaylistText = "";
+      try {
+        masterPlaylistText = await this.fetchTextCancellable(masterPlaylistUrl);
+      } catch (error) {
+        if (!manifestQuality || error instanceof CancellationError || this.abortSignal?.aborted) throw error;
+        logger.warn(`Master playlist could not be read again; using the chosen quality directly: ${error}`);
+      }
 
-      canDownloadHLSManifest(masterPlaylistText);
+      if (masterPlaylistText) canDownloadHLSManifest(masterPlaylistText);
 
       if (manifestQuality) {
         videoPlaylistUrl = manifestQuality.videoPlaylistUrl || null;

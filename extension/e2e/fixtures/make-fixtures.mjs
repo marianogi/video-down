@@ -46,6 +46,22 @@ writeFileSync(join(out, "hls", "master.m3u8"), [
   "",
 ].join("\n"));
 
+// 2b. Same stream with Unified Streaming Origin names: the master is <name>.m3u8 and each variant
+//     <name>-audio_eng=…-video_eng=….m3u8 next to it. The e2e server only serves these playlists
+//     with ?token=abc, like a CDN with signed URLs.
+{
+  const dir = join(out, "uni");
+  mkdirSync(dir, { recursive: true });
+  const variants = [];
+  for (const [h, bw, res] of [[360, 600000, "640x360"], [720, 1800000, "1280x720"]]) {
+    const name = `clip-audio_eng=96000-video_eng=${bw}.m3u8`;
+    const text = readFileSync(join(out, "hls", `v${h}`, "index.m3u8"), "utf8").replace(/^(seg\d+\.ts)$/gm, `../hls/v${h}/$1`);
+    writeFileSync(join(dir, name), text);
+    variants.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bw + 200000},RESOLUTION=${res},CODECS="avc1.64001f,mp4a.40.2"`, name);
+  }
+  writeFileSync(join(dir, "clip.m3u8"), ["#EXTM3U", "#EXT-X-VERSION:3", ...variants, ""].join(String.fromCharCode(10)));
+}
+
 // 3. HLS encrypted with AES-128 (clear key published in the playlist: NOT DRM)
 {
   const dir = join(out, "hls-aes");
@@ -140,7 +156,7 @@ ${join(dir, "enc.key")}
   writeFileSync(join(out, "dash", "widevine.mpd"), mpd);
 }
 
-for (const f of ["clip-360.mp4", "hls/master.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
+for (const f of ["clip-360.mp4", "hls/master.m3u8", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
   "hls-aes-zeroiv/index.m3u8", "hls-byterange/index.m3u8", "hls-garbage/index.m3u8", "dash/manifest.mpd", "dash/widevine.mpd"]) {
   if (!existsSync(join(out, f))) throw new Error(`missing ${f}`);
 }

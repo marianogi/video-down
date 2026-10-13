@@ -17,6 +17,7 @@ import { isLive } from "../../parsers/mpd-parser";
 import { detectDashDrm } from "../../utils/drm-utils";
 import { type DetectionFailure, describeBody, redactUrl, statusFromError } from "../detection-failure";
 import { DEFAULT_DETECTION_CACHE_SIZE } from "../../../shared/constants";
+import type { PlaylistBodies } from "../playlist-bodies";
 
 export interface DashDetectionHandlerOptions {
   onVideoDetected?: (video: VideoMetadata) => void;
@@ -24,6 +25,8 @@ export interface DashDetectionHandlerOptions {
   onDetectionFailed?: (failure: DetectionFailure) => void;
   /** Max distinct URL path keys tracked per page (default: 500) */
   detectionCacheSize?: number;
+  /** Manifests as the page's player received them (used when they cannot be read again) */
+  bodies?: PlaylistBodies;
 }
 
 /**
@@ -34,15 +37,34 @@ export class DashDetectionHandler {
   private onDetectionFailed?: (failure: DetectionFailure) => void;
   private seenPathKeys: Set<string> = new Set();
   private readonly maxSeenPathKeys: number;
+  private readonly bodies?: PlaylistBodies;
 
   constructor(options: DashDetectionHandlerOptions = {}) {
     this.onVideoDetected = options.onVideoDetected;
     this.onDetectionFailed = options.onDetectionFailed;
+    this.bodies = options.bodies;
     this.maxSeenPathKeys = options.detectionCacheSize ?? DEFAULT_DETECTION_CACHE_SIZE;
   }
 
   destroy(): void {
     this.seenPathKeys.clear();
+  }
+
+  /** Let a manifest be detected again (the page moved on and may come back to it). */
+  forget(url: string): void {
+    this.seenPathKeys.delete(this.getPathKey(url));
+  }
+
+  private async fetchManifestText(url: string): Promise<string> {
+    const known = this.bodies?.get(url);
+    if (known !== undefined) return known;
+    try {
+      return await fetchText(url, 1);
+    } catch (error) {
+      const late = this.bodies?.get(url);
+      if (late !== undefined) return late;
+      throw error;
+    }
   }
 
   handleNetworkRequest(url: string, force: boolean = false): void {
@@ -64,7 +86,7 @@ export class DashDetectionHandler {
     this.seenPathKeys.add(pathKey);
 
     try {
-      const mpdText = await fetchText(url, 1);
+      const mpdText = await this.fetchManifestText(url);
       if (!/<(?:\w+:)?MPD[\s>]/i.test(mpdText.slice(0, 4096))) {
         this.seenPathKeys.delete(pathKey);
         const body = describeBody(mpdText);

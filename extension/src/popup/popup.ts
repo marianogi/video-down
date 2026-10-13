@@ -135,6 +135,13 @@ document.getElementById("clear")!.addEventListener("click", async () => {
   await sendMessage(MessageType.CLEAR_DOWNLOADS).catch(() => undefined);
   await load();
 });
+document.getElementById("diag")!.addEventListener("click", async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+  if (tab?.id !== undefined) {
+    await chrome.tabs.create({ url: chrome.runtime.getURL(`options/options.html?diag=${tab.id}#diagnostics`) });
+  }
+  window.close();
+});
 document.getElementById("options")!.addEventListener("click", () => {
   void chrome.runtime.openOptionsPage();
   window.close();

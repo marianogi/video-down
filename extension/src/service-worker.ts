@@ -38,6 +38,7 @@ import { KEEPALIVE_INTERVAL_MS, STORAGE_CONFIG_KEY } from "./shared/constants";
 import { variantsFor, type BrowserVariant } from "./core/variants";
 import { isSafeHttpUrl } from "@host/protocol";
 import { withPageHeaders } from "./core/downloader/header-rules";
+import { diagUrl, formatDiagnostics, type DiagEntry } from "./core/diagnostics";
 import {
   nativeStatus,
   nativeProbe,
@@ -205,22 +206,85 @@ function wasRequested(tabId: number, url: string): boolean {
   return at !== undefined && Date.now() - at < RECENT_TTL_MS;
 }
 
+/**
+ * Requests made by a service worker have no tab (tabId -1): a page whose own service worker
+ * fetches its playlists. They cannot be sent to a frame, but the page-world script still sees
+ * the response the page got; remembering them by the worker's origin lets that report be
+ * verified for frames of the same origin.
+ */
+const workerRequests = new Map<string, Map<string, number>>();
+const WORKER_ORIGINS_LIMIT = 50;
+
+function wasRequestedByWorker(origin: string | undefined, url: string): boolean {
+  if (!origin) return false;
+  const at = workerRequests.get(origin)?.get(url);
+  return at !== undefined && Date.now() - at < RECENT_TTL_MS;
+}
+
+function contentTypeOf(details: chrome.webRequest.OnHeadersReceivedDetails): string {
+  return details.responseHeaders?.find((h) => h.name.toLowerCase() === "content-type")?.value?.toLowerCase() ?? "";
+}
+
+/** HLS/DASH by URL, or by Content-Type when the URL says nothing (then a hint is returned). */
+function playlistOf(details: chrome.webRequest.OnHeadersReceivedDetails): { formatHint?: VideoFormat } | null {
+  const format = detectFormatFromUrl(details.url);
+  if (format === VideoFormat.HLS || format === VideoFormat.DASH) return {};
+  const ct = contentTypeOf(details);
+  if (HLS_TYPES.some((t) => ct.includes(t))) return { formatHint: VideoFormat.HLS };
+  if (DASH_TYPES.some((t) => ct.includes(t))) return { formatHint: VideoFormat.DASH };
+  return null;
+}
+
+function onWorkerRequest(details: chrome.webRequest.OnHeadersReceivedDetails): void {
+  const initiator = details.initiator;
+  // The extension's own requests also have no tab: they are not the page's.
+  if (!initiator || initiator === "null" || initiator.startsWith("chrome-extension://")) return;
+  const url = details.url;
+  if (details.statusCode < 400 && details.type !== "media") {
+    let log = workerRequests.get(initiator);
+    if (!log) {
+      log = new Map();
+      workerRequests.set(initiator, log);
+      if (workerRequests.size > WORKER_ORIGINS_LIMIT) workerRequests.delete(workerRequests.keys().next().value!);
+    }
+    log.delete(url);
+    log.set(url, Date.now());
+    if (log.size > RECENT_LIMIT) log.delete(log.keys().next().value!);
+  }
+  if (playlistOf(details)) {
+    addWorkerDiag(initiator, {
+      at: Date.now(),
+      frameId: null,
+      source: "worker",
+      event: `HTTP ${details.statusCode}`,
+      url: diagUrl(url),
+      detail: `service worker of ${initiator}`,
+    });
+  }
+}
+
 function onManifestHeaders(details: chrome.webRequest.OnHeadersReceivedDetails): void {
-    if (details.tabId < 0 || details.statusCode >= 400) return;
+    if (details.tabId < 0) {
+      onWorkerRequest(details);
+      return;
+    }
     const url = details.url;
-    if (details.type !== "media") logRequest(details.tabId, url);
+    if (details.statusCode < 400 && details.type !== "media") logRequest(details.tabId, url);
     if (url.includes(".googlevideo.com/")) return; // YouTube media goes through yt-dlp
 
-    let format = detectFormatFromUrl(url);
-    let formatHint: VideoFormat | undefined;
-    if (format !== VideoFormat.HLS && format !== VideoFormat.DASH) {
-      const ct =
-        details.responseHeaders?.find((h) => h.name.toLowerCase() === "content-type")?.value?.toLowerCase() ?? "";
-      if (HLS_TYPES.some((t) => ct.includes(t))) formatHint = VideoFormat.HLS;
-      else if (DASH_TYPES.some((t) => ct.includes(t))) formatHint = VideoFormat.DASH;
-      else return;
-      format = formatHint;
-    }
+    const playlist = playlistOf(details);
+    if (!playlist) return;
+    const ct = contentTypeOf(details).split(";")[0]?.trim();
+    addDiag(details.tabId, {
+      at: Date.now(),
+      frameId: details.frameId,
+      source: "network",
+      event: `HTTP ${details.statusCode}`,
+      url: diagUrl(url),
+      ...(ct ? { detail: ct } : {}),
+    });
+    if (details.statusCode >= 400) return;
+    const { formatHint } = playlist;
 
     remember(details.tabId, details.frameId, url, formatHint);
     chrome.tabs.sendMessage(
@@ -248,6 +312,7 @@ chrome.webRequest.onBeforeRequest.addListener(
       for (const key of [...pendingByFrame.keys()]) {
         if (key.startsWith(`${details.tabId}:`)) pendingByFrame.delete(key);
       }
+      void resetTabDiag(details.tabId);
     } else {
       pendingByFrame.delete(frameKey(details.tabId, details.frameId));
     }
@@ -258,10 +323,160 @@ chrome.webRequest.onBeforeRequest.addListener(
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   recentRequests.delete(tabId);
+  void resetTabDiag(tabId);
   for (const key of [...pendingByFrame.keys()]) {
     if (key.startsWith(`${tabId}:`)) pendingByFrame.delete(key);
   }
 });
+
+// ------------------------------------------------------------------ diagnostics
+
+/**
+ * What the extension saw in each tab, for the diagnostic report (see core/diagnostics.ts).
+ * Kept in chrome.storage.session as well: the worker is stopped after a short idle time, and
+ * the report is usually asked for a while after the problem happened.
+ */
+interface TabDiag {
+  frames: Map<number, { origin: string; url: string }>;
+  entries: DiagEntry[];
+}
+type WorkerDiagEntry = DiagEntry & { initiator: string };
+interface SavedDiag {
+  tabs: Array<[number, { frames: Array<[number, { origin: string; url: string }]>; entries: DiagEntry[] }]>;
+  worker: WorkerDiagEntry[];
+}
+
+const DIAG_KEY = "diagnostics:v1";
+const DIAG_LIMIT = 300;
+const WORKER_DIAG_LIMIT = 100;
+const diagByTab = new Map<number, TabDiag>();
+const workerDiag: WorkerDiagEntry[] = [];
+let diagLoaded: Promise<void> | null = null;
+let diagSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function loadDiag(): Promise<void> {
+  diagLoaded ??= chrome.storage.session
+    .get(DIAG_KEY)
+    .then((stored) => {
+      const saved = stored[DIAG_KEY] as SavedDiag | undefined;
+      if (!saved) return;
+      for (const [tabId, tab] of saved.tabs) {
+        const current = tabDiag(tabId);
+        for (const [frameId, frame] of tab.frames) if (!current.frames.has(frameId)) current.frames.set(frameId, frame);
+        current.entries.unshift(...tab.entries);
+        current.entries.splice(0, Math.max(0, current.entries.length - DIAG_LIMIT));
+      }
+      workerDiag.unshift(...saved.worker);
+      workerDiag.splice(0, Math.max(0, workerDiag.length - WORKER_DIAG_LIMIT));
+    })
+    .catch(() => undefined);
+  return diagLoaded;
+}
+
+function scheduleDiagSave(): void {
+  if (diagSaveTimer) return;
+  diagSaveTimer = setTimeout(() => {
+    diagSaveTimer = null;
+    void loadDiag()
+      .then(() => {
+        const saved: SavedDiag = {
+          tabs: [...diagByTab].map(([tabId, d]) => [tabId, { frames: [...d.frames], entries: d.entries }]),
+          worker: workerDiag,
+        };
+        return chrome.storage.session.set({ [DIAG_KEY]: saved });
+      })
+      .catch(() => undefined);
+  }, 1000);
+}
+
+function tabDiag(tabId: number): TabDiag {
+  let d = diagByTab.get(tabId);
+  if (!d) {
+    d = { frames: new Map(), entries: [] };
+    diagByTab.set(tabId, d);
+  }
+  return d;
+}
+
+function addDiag(tabId: number, entry: DiagEntry): void {
+  const d = tabDiag(tabId);
+  d.entries.push(entry);
+  if (d.entries.length > DIAG_LIMIT) d.entries.splice(0, d.entries.length - DIAG_LIMIT);
+  scheduleDiagSave();
+}
+
+function addWorkerDiag(initiator: string, entry: DiagEntry): void {
+  workerDiag.push({ ...entry, initiator });
+  if (workerDiag.length > WORKER_DIAG_LIMIT) workerDiag.splice(0, workerDiag.length - WORKER_DIAG_LIMIT);
+  scheduleDiagSave();
+}
+
+function noteFrame(tabId: number, frameId: number, url: string | undefined): void {
+  if (!url) return;
+  try {
+    const origin = new URL(url).origin;
+    const known = tabDiag(tabId).frames.get(frameId);
+    if (known?.url === diagUrl(url)) return;
+    tabDiag(tabId).frames.set(frameId, { origin, url: diagUrl(url) });
+    scheduleDiagSave();
+  } catch {
+    // not a URL
+  }
+}
+
+async function resetTabDiag(tabId: number): Promise<void> {
+  await loadDiag();
+  if (diagByTab.delete(tabId)) scheduleDiagSave();
+}
+
+async function buildDiagnostics(tabId: number): Promise<string> {
+  await loadDiag();
+  const d = diagByTab.get(tabId);
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  const native = await nativeStatus().catch(() => null);
+  const platform = await chrome.runtime
+    .getPlatformInfo()
+    .then((p) => `${p.os} ${p.arch}`)
+    .catch(() => "?");
+  const browser = navigator.userAgent.match(/(?:Edg|OPR|Chrome|Chromium)\/[\d.]+/g)?.join(" ") ?? navigator.userAgent;
+  const manifest = chrome.runtime.getManifest();
+
+  const entries = d?.entries ?? [];
+  const usedFrames = new Set(entries.map((e) => e.frameId));
+  const frames = [...(d?.frames ?? [])].filter(([frameId]) => frameId === 0 || usedFrames.has(frameId));
+  const origins = new Set(frames.map(([, f]) => f.origin));
+  try {
+    if (tab?.url) origins.add(new URL(tab.url).origin);
+  } catch {
+    // ignore
+  }
+  const fromWorkers = workerDiag.filter((e) => origins.has(e.initiator)).map(({ initiator: _i, ...e }) => e);
+
+  return formatDiagnostics({
+    generatedAt: Date.now(),
+    version: manifest.version_name ?? manifest.version,
+    platform,
+    browser,
+    native: native?.installed
+      ? `installed · host ${native.pong?.hostVersion ?? "?"} · yt-dlp ${native.pong?.ytdlpVersion ?? "?"}`
+      : `not available${native?.error ? ` (${native.error.slice(0, 120)})` : ""}`,
+    ...(tab?.url ? { tabUrl: tab.url } : {}),
+    frames: frames.map(([frameId, f]) => ({ frameId, url: f.url })),
+    entries: [...entries, ...fromWorkers],
+  });
+}
+
+const DIAG_EVENTS = new Set([
+  "detected",
+  "master",
+  "variant-of-master",
+  "master-found",
+  "master-not-found",
+  "failed",
+  "navigation",
+  "reload",
+  "menu",
+]);
 
 // ------------------------------------------------------------------ variants
 
@@ -290,6 +505,11 @@ async function handleGetVariants(
         ...(sizes[i] ? { approxBytes: sizes[i] } : {}),
       }));
       return { success: true, variants };
+    }
+    // The playlist as the page's player received it: a single-use or short-lived link cannot be
+    // read again, and a master found next to a variant carries the variant's token in its URIs.
+    if (typeof payload.text === "string" && payload.text.length > 0 && payload.text.length <= 8_000_000) {
+      return { success: true, variants: variantsFor(payload.format, payload.text, payload.url, payload.duration) };
     }
     const pageUrl = frameUrl ?? payload.pageUrl;
     const { res, text } = await withPageHeaders(payload.url, pageUrl, async () => {
@@ -682,6 +902,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type as MessageType) {
     case MessageType.CONTENT_READY: {
       const origin = originOf(sender);
+      if (origin) noteFrame(origin.tabId, origin.frameId, sender.url);
       const pending = origin ? (pendingByFrame.get(frameKey(origin.tabId, origin.frameId)) ?? []) : [];
       // Answer at once: starting the native host takes seconds and must never delay detection.
       const cached = cachedNativeStatus();
@@ -701,7 +922,61 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MessageType.VERIFY_SNIFFED_URL: {
       const tabId = sender.tab?.id;
       const url = String(message.payload?.url ?? "");
-      sendResponse({ ok: tabId !== undefined && isSafeHttpUrl(url) && wasRequested(tabId, url) });
+      let frameOrigin: string | undefined = sender.origin;
+      try {
+        frameOrigin ??= sender.url ? new URL(sender.url).origin : undefined;
+      } catch {
+        // ignore
+      }
+      const ok =
+        tabId !== undefined &&
+        isSafeHttpUrl(url) &&
+        (wasRequested(tabId, url) || wasRequestedByWorker(frameOrigin, url));
+      if (tabId !== undefined && isSafeHttpUrl(url)) {
+        addDiag(tabId, {
+          at: Date.now(),
+          frameId: sender.frameId ?? 0,
+          source: "page",
+          event: ok ? "player-read" : "player-read-unverified",
+          url: diagUrl(url),
+        });
+      }
+      sendResponse({ ok });
+      return false;
+    }
+    case MessageType.DIAG_EVENT: {
+      const tabId = sender.tab?.id;
+      const p = message.payload ?? {};
+      if (tabId === undefined || typeof p.event !== "string" || !DIAG_EVENTS.has(p.event)) return false;
+      const frameId = sender.frameId ?? 0;
+      noteFrame(tabId, frameId, sender.url);
+      addDiag(tabId, {
+        at: Date.now(),
+        frameId,
+        source: "frame",
+        event: p.event,
+        ...(typeof p.url === "string" ? { url: diagUrl(p.url) } : {}),
+        ...(typeof p.detail === "string" ? { detail: p.detail.slice(0, 200) } : {}),
+      });
+      return false;
+    }
+    case MessageType.GET_DIAGNOSTICS: {
+      // Extension pages only (options); content scripts never read other tabs' reports.
+      if (!sender.url?.startsWith(chrome.runtime.getURL(""))) return false;
+      const tabId = Number(message.payload?.tabId);
+      if (!Number.isInteger(tabId) || tabId < 0) return false;
+      return reply(buildDiagnostics(tabId).then((text) => ({ success: true, text })));
+    }
+    case MessageType.OPEN_DIAGNOSTICS: {
+      const tab = sender.tab;
+      if (tab?.id === undefined) return false;
+      void chrome.tabs
+        .create({
+          url: chrome.runtime.getURL(`options/options.html?diag=${tab.id}#diagnostics`),
+          index: tab.index + 1,
+          openerTabId: tab.id,
+        })
+        .catch(() => undefined);
       return false;
     }
     case MessageType.DOWNLOAD_REQUEST:

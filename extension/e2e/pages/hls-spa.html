@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Single-page app</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Single-page app</h1>
+<!-- First video: HLS master with two qualities. Then the app changes the address and loads a
+     different video (one quality) into the same element, at once, like any router would. -->
+<video controls muted></video>
+<script type="module">
+  import { msePlayer } from "./player.js";
+  await msePlayer("/media/hls/master.m3u8");
+  document.title = "first";
+  setTimeout(async () => {
+    history.pushState({}, "", `${location.pathname}?video=2`);
+    await msePlayer("/media/hls-aes/index.m3u8");
+    document.title = "second";
+  }, 3000);
+</script>
+</body></html>

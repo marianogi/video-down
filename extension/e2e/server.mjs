@@ -6,7 +6,9 @@
 //                        (common with players embedded from another site)
 //   /odd/hls/...         HLS served as text/plain, master without extension (body sniffing)
 //   /once/master.m3u8?token=…  single-use link: the first request gets the playlist, any repeat a 403
+//   /once/…              the variants and segments of that master (no token needed)
 //   /opaque/master.m3u8  "playlist" that is not HLS (encrypted bytes), served as mpegurl
+//   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc
 //   /protected/hls/cross-master.m3u8
 //                        master whose variants and segments live on ANOTHER host (localhost vs
 //                        127.0.0.1), all of them requiring the player's Referer
@@ -44,6 +46,11 @@ export function startServer(port = 0) {
       }
       usedTokens.add(token);
       pathname = "/media/hls/master.m3u8";
+    } else if (pathname.startsWith("/once/")) {
+      pathname = pathname.replace("/once/", "/media/hls/");
+    } else if (pathname.startsWith("/media/uni/") && pathname.endsWith(".m3u8") && url.searchParams.get("token") !== "abc") {
+      res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: missing token");
+      return;
     } else if (pathname === "/opaque/master.m3u8") {
       const bytes = Buffer.alloc(512);
       for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 73 + 41) % 256;

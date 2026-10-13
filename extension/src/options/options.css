@@ -25,6 +25,19 @@ body { background: var(--surface-2); }
 .details dt { color: var(--text-2); }
 .details dd { margin: 0; word-break: break-all; }
 
+.diag {
+  margin: 8px 0 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .install { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .install h3 { font-size: 14px; }
 

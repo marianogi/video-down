@@ -33,6 +33,8 @@ import {
 } from "../../parsers/m3u8-parser";
 import { fetchText } from "../../utils/fetch-utils";
 import { normalizeUrl } from "../../utils/url-utils";
+import { masterCandidates, withInheritedQuery } from "../../parsers/master-discovery";
+import type { PlaylistBodies } from "../playlist-bodies";
 import { logger } from "../../utils/logger";
 import { extractThumbnail } from "../thumbnail-utils";
 import { detectHlsDrm, canDecrypt } from "../../utils/drm-utils";
@@ -51,6 +53,10 @@ export interface HlsDetectionHandlerOptions {
   detectionCacheSize?: number;
   /** Max master playlists held in memory (default: 50) */
   masterPlaylistCacheSize?: number;
+  /** Playlists as the page's player received them (used when they cannot be read again) */
+  bodies?: PlaylistBodies;
+  /** Notes for the diagnostic report */
+  onDiagnostic?: (event: string, url: string, detail?: string) => void;
 }
 
 /** Internal structure for tracking master playlist information */
@@ -68,6 +74,10 @@ export class HlsDetectionHandler {
   private onVideoDetected?: (video: VideoMetadata) => void;
   private onVideoRemoved?: (url: string) => void;
   private onDetectionFailed?: (failure: DetectionFailure) => void;
+  private onDiagnostic?: (event: string, url: string, detail?: string) => void;
+  private readonly bodies?: PlaylistBodies;
+  // Variant playlists whose master was already looked for (see discoverMaster)
+  private readonly discoveryTried: Set<string> = new Set();
   // Track master playlists and their variants
   private masterPlaylists: Map<string, MasterPlaylistInfo> = new Map();
   // Deduplicate HLS URLs by origin+pathname (ignoring query params like tokens/timestamps)
@@ -83,6 +93,8 @@ export class HlsDetectionHandler {
     this.onVideoDetected = options.onVideoDetected;
     this.onVideoRemoved = options.onVideoRemoved;
     this.onDetectionFailed = options.onDetectionFailed;
+    this.onDiagnostic = options.onDiagnostic;
+    this.bodies = options.bodies;
     this.maxSeenPathKeys = options.detectionCacheSize ?? DEFAULT_DETECTION_CACHE_SIZE;
     this.maxMasterPlaylists = options.masterPlaylistCacheSize ?? DEFAULT_MASTER_PLAYLIST_CACHE_SIZE;
   }
@@ -93,6 +105,15 @@ export class HlsDetectionHandler {
   destroy(): void {
     this.seenPathKeys.clear();
     this.masterPlaylists.clear();
+    this.discoveryTried.clear();
+  }
+
+  /** Let a playlist be detected again (the page moved on and may come back to it). */
+  forget(url: string): void {
+    const key = this.getPathKey(url);
+    this.seenPathKeys.delete(key);
+    this.discoveryTried.delete(key);
+    this.masterPlaylists.delete(normalizeUrl(url));
   }
 
   /**
@@ -165,7 +186,16 @@ export class HlsDetectionHandler {
    * @private
    */
   private async fetchPlaylistText(url: string): Promise<string> {
-    return await fetchText(url, 1);
+    const known = this.bodies?.get(url);
+    if (known !== undefined) return known;
+    try {
+      return await fetchText(url, 1);
+    } catch (error) {
+      // The player's own copy may have arrived meanwhile (single-use or short-lived links).
+      const late = this.bodies?.get(url);
+      if (late !== undefined) return late;
+      throw error;
+    }
   }
 
   /**
@@ -184,6 +214,7 @@ export class HlsDetectionHandler {
         "[video-down] M3U8 media playlist belongs to a master playlist, removing it",
         url,
       );
+      this.onDiagnostic?.("variant-of-master", url);
       this.removeDetectedVideo(normalizedUrl);
       return null;
     }
@@ -192,7 +223,45 @@ export class HlsDetectionHandler {
     // A media playlist without #EXT-X-ENDLIST is a live stream
     const isLive = !playlistText.includes("#EXT-X-ENDLIST");
     logger.debug(`[video-down] HLS media playlist: ${redactUrl(url)}`);
-    return await this.addDetectedVideo(url, VideoFormat.M3U8, playlistText, isLive);
+    const metadata = await this.addDetectedVideo(url, VideoFormat.M3U8, playlistText, isLive);
+    void this.discoverMaster(url);
+    return metadata;
+  }
+
+  /**
+   * Only a variant playlist was seen, so only one quality could be offered. Look for its master
+   * where widespread packagers put it (see master-discovery.ts). A candidate counts only if it
+   * is a master that lists this very playlist; misses are silent, since they are guesses and
+   * not something the page did wrong.
+   */
+  private async discoverMaster(mediaUrl: string): Promise<void> {
+    const mediaKey = this.getPathKey(mediaUrl);
+    if (this.discoveryTried.has(mediaKey)) return;
+    this.discoveryTried.add(mediaKey);
+    let tried = 0;
+    for (const candidate of masterCandidates(mediaUrl)) {
+      const candidateKey = this.getPathKey(candidate);
+      if (this.seenPathKeys.has(candidateKey)) continue;
+      tried++;
+      let text: string;
+      try {
+        text = await fetchText(candidate, 1);
+      } catch {
+        continue;
+      }
+      // The real master may have been detected while we were guessing.
+      if (this.checkIfBelongsToMasterPlaylist(normalizeUrl(mediaUrl))) return;
+      if (!isMasterPlaylist(text)) continue;
+      const lists = parseMasterPlaylist(text, candidate).some((l) => this.getPathKey(l.uri) === mediaKey);
+      if (!lists) continue;
+      const adjusted = withInheritedQuery(text, mediaUrl);
+      this.seenPathKeys.add(candidateKey);
+      this.bodies?.set(candidate, adjusted);
+      this.onDiagnostic?.("master-found", candidate, `next to ${redactUrl(mediaUrl)}`);
+      await this.handleMasterPlaylist(candidate, normalizeUrl(candidate), adjusted);
+      return;
+    }
+    this.onDiagnostic?.("master-not-found", mediaUrl, `${tried} candidate(s) tried`);
   }
 
   /**
@@ -208,6 +277,7 @@ export class HlsDetectionHandler {
 
     // Parse once, reuse for tracking and liveness check
     const levels = parseMasterPlaylist(playlistText, url);
+    this.onDiagnostic?.("master", url, `${levels.filter((l) => l.type === "stream").length} variant(s)`);
 
     const variantUrls = this.trackMasterPlaylistWithLevels(
       url,
@@ -242,7 +312,7 @@ export class HlsDetectionHandler {
     try {
       const firstVariant = levels.find((l) => l.type === "stream");
       if (!firstVariant) return { isLive: false, variantText: null };
-      const variantText = await fetchText(firstVariant.uri, 1);
+      const variantText = this.bodies?.get(firstVariant.uri) ?? (await fetchText(firstVariant.uri, 1));
       return { isLive: !variantText.includes("#EXT-X-ENDLIST"), variantText };
     } catch {
       // If we can't fetch the variant, assume VOD (safer default)

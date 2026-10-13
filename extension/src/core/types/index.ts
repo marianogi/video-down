@@ -28,6 +28,7 @@ export interface VideoMetadata {
   isLive?: boolean; // Indicates if the stream is a live stream (no #EXT-X-ENDLIST)
   drmSystem?: string; // Key system or manifest marker that revealed the DRM
   detectedAt?: number; // Epoch ms when this frame detected the media (used to bind it to a <video>)
+  lastSeenAt?: number; // Epoch ms of the last time the page requested it (a player still using it)
 }
 
 export interface VideoQuality {

@@ -37,6 +37,15 @@ export interface OverlayDeps {
   failures(): DetectionFailure[];
   /** Read those manifests again (e.g. after the player refreshed its token) */
   retryFailed(): void;
+  /** The playlist as the page's player received it, if the frame has a copy */
+  bodyFor(url: string): string | undefined;
+  /**
+   * A video (re)started loading. `previous` is what was bound to it until now; after an
+   * address change, whatever of that is old belonged to the previous video.
+   */
+  onVideoLoad(previous: VideoMetadata[]): void;
+  /** Note for the diagnostic report */
+  note?(event: string, url?: string, detail?: string): void;
 }
 
 interface JobView {
@@ -298,7 +307,9 @@ export class Overlay {
       visible: false,
     };
     const onLoadStart = () => {
+      const previous = this.mediaFor(tr);
       tr.loadStartedAt = Date.now();
+      this.deps.onVideoLoad(previous);
     };
     video.addEventListener("loadstart", onLoadStart);
     video.addEventListener("emptied", onLoadStart);
@@ -310,6 +321,10 @@ export class Overlay {
     this.tracked.set(key, tr);
     this.byVideo.set(video, tr);
     this.resizeObserver.observe(video);
+    // A player created after an address change may have started loading before it was found.
+    if (video.currentSrc || video.networkState !== HTMLMediaElement.NETWORK_EMPTY) {
+      this.deps.onVideoLoad(this.mediaFor(tr));
+    }
   }
 
   private untrack(tr: Tracked): void {
@@ -445,7 +460,10 @@ export class Overlay {
       close,
     ]);
     const jobs = el("div", { attrs: { "data-jobs": "" } });
-    this.popover.replaceChildren(header, ...body, jobs);
+    const report = el("button", { className: "vd-link vd-diag", text: t("diagLink"), attrs: { type: "button" } });
+    report.addEventListener("click", () => void send(MessageType.OPEN_DIAGNOSTICS).catch(() => undefined));
+    const footer = el("div", { className: "vd-foot" }, [report]);
+    this.popover.replaceChildren(header, ...body, jobs, footer);
     const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
     if (tr) this.renderJobs(tr);
     this.positionPopover();
@@ -482,6 +500,10 @@ export class Overlay {
       nativeAvailable = await this.deps.isNativeAvailable().catch(() => false);
       if (token !== this.renderToken) return;
       if (nativeAvailable) r = route({ ...input, nativeAvailable });
+    }
+    if (r.kind !== this.lastRoute?.kind) {
+      const counts = input.media.map((m) => m.format).join("+") || "none";
+      this.deps.note?.("menu", r.kind === "manifest" ? r.media.url : undefined, `${r.kind}; media: ${counts}`);
     }
     this.lastRoute = r;
 
@@ -686,9 +708,15 @@ export class Overlay {
     const duration = Number.isFinite(tr.video.duration) ? tr.video.duration : undefined;
     let reply: GetVariantsReply;
     try {
-      reply = await this.cached(`manifest:${media.url}`, () =>
-        send<GetVariantsReply>(MessageType.GET_VARIANTS, { url: media.url, format: media.format, duration }),
-      );
+      reply = await this.cached(`manifest:${media.url}`, () => {
+        const text = this.deps.bodyFor(media.url);
+        return send<GetVariantsReply>(MessageType.GET_VARIANTS, {
+          url: media.url,
+          format: media.format,
+          duration,
+          ...(text ? { text } : {}),
+        });
+      });
     } catch (err) {
       reply = { success: false, error: err instanceof Error ? err.message : String(err) };
     }

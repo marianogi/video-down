@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Playlists fetched by a service worker</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Playlists fetched by a service worker</h1>
+<!-- The page's own service worker fetches the playlists: those requests belong to no tab. -->
+<video controls muted></video>
+<script type="module">
+  import { msePlayer } from "../player.js";
+  await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+  if (!navigator.serviceWorker.controller) {
+    await new Promise((resolve) => navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true }));
+  }
+  document.title = "controlled";
+  msePlayer("/media/hls/master.m3u8");
+</script>
+</body></html>

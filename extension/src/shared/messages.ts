@@ -25,6 +25,11 @@ export enum MessageType {
   GET_VARIANTS = "GET_VARIANTS",
   VERIFY_SNIFFED_URL = "VERIFY_SNIFFED_URL",
 
+  // Diagnostic report (what the extension saw in a tab)
+  DIAG_EVENT = "DIAG_EVENT",
+  GET_DIAGNOSTICS = "GET_DIAGNOSTICS",
+  OPEN_DIAGNOSTICS = "OPEN_DIAGNOSTICS",
+
   // Native component (yt-dlp)
   NATIVE_STATUS = "NATIVE_STATUS",
   NATIVE_PROBE = "NATIVE_PROBE",
@@ -87,6 +92,8 @@ export interface GetVariantsPayload {
   url: string;
   format: VideoFormat;
   duration?: number;
+  /** The playlist as the page's player received it, when the content script has it */
+  text?: string;
 }
 
 export interface GetVariantsReply {

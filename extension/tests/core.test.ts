@@ -308,3 +308,117 @@ describe("HLS media playlist parsing", () => {
     expect(segments[0]!.key).toBeUndefined();
   });
 });
+
+// ------------------------------------------------------------------ master discovery
+
+import { masterCandidates, withInheritedQuery } from "../src/core/parsers/master-discovery";
+import { PlaylistBodies } from "../src/core/detection/playlist-bodies";
+import { diagUrl, formatDiagnostics } from "../src/core/diagnostics";
+
+describe("master discovery", () => {
+  it("Unified Origin: strips the track selection and keeps the token", () => {
+    const c = masterCandidates("https://cdn.example.com/v/1/hls/master-t-9-audio_eng=128005-video_eng=2781000.m3u8?hdnts=abc");
+    expect(c[0]).toBe("https://cdn.example.com/v/1/hls/master-t-9.m3u8?hdnts=abc");
+  });
+
+  it("Wowza and nginx-vod conventions", () => {
+    expect(masterCandidates("https://w.example.com/app/stream/chunklist_w12_b800000.m3u8")[0]).toBe(
+      "https://w.example.com/app/stream/playlist.m3u8",
+    );
+    expect(masterCandidates("https://n.example.com/hls/x.mp4/index-v1-a1.m3u8")[0]).toBe(
+      "https://n.example.com/hls/x.mp4/master.m3u8",
+    );
+  });
+
+  it("rendition suffixes and rendition folders", () => {
+    expect(masterCandidates("https://e.example.com/out/movie_720p.m3u8")[0]).toBe("https://e.example.com/out/movie.m3u8");
+    const folder = masterCandidates("https://e.example.com/vod/abc/720p/index.m3u8?t=1");
+    expect(folder).toContain("https://e.example.com/vod/abc/master.m3u8?t=1");
+    expect(folder).toContain("https://e.example.com/vod/abc/playlist.m3u8?t=1");
+  });
+
+  it("never more than four guesses, never the playlist itself, nothing for non-HLS", () => {
+    const c = masterCandidates("https://e.example.com/vod/720p/master_720p.m3u8");
+    expect(c.length).toBeLessThanOrEqual(4);
+    expect(c).not.toContain("https://e.example.com/vod/720p/master_720p.m3u8");
+    expect(masterCandidates("https://e.example.com/master.m3u8")).toEqual([]);
+    expect(masterCandidates("https://e.example.com/video.mp4")).toEqual([]);
+    expect(masterCandidates("blob:https://e.example.com/1")).toEqual([]);
+  });
+
+  it("variants of a guessed master inherit the token they lack", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",URI="audio.m3u8"',
+      "#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360",
+      "v-360.m3u8",
+      "#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720",
+      "v-720.m3u8?own=1",
+    ].join("\n");
+    const out = withInheritedQuery(master, "https://cdn.example.com/v-360.m3u8?hdnts=abc");
+    expect(out).toContain("\nv-360.m3u8?hdnts=abc\n");
+    expect(out).toContain('URI="audio.m3u8?hdnts=abc"');
+    expect(out).toContain("\nv-720.m3u8?own=1");
+    expect(withInheritedQuery(master, "https://cdn.example.com/v-360.m3u8")).toBe(master);
+  });
+});
+
+describe("playlist copies kept from the player", () => {
+  it("answers only for the exact address: another query string may be another video", () => {
+    const b = new PlaylistBodies();
+    b.set("https://cdn.example.com/m.m3u8?video=1", "#EXTM3U one", 1);
+    b.set("https://cdn.example.com/m.m3u8?video=2", "#EXTM3U two", 2);
+    expect(b.get("https://cdn.example.com/m.m3u8?video=1#t=3")).toBe("#EXTM3U one");
+    expect(b.get("https://cdn.example.com/m.m3u8?video=2")).toBe("#EXTM3U two");
+    expect(b.get("https://cdn.example.com/m.m3u8?video=3")).toBeUndefined();
+  });
+
+  it("stays within its limits and forgets old copies", () => {
+    const b = new PlaylistBodies(2, 100);
+    b.set("https://a.example.com/1.m3u8", "x".repeat(40), 1);
+    b.set("https://a.example.com/2.m3u8", "y".repeat(40), 2);
+    b.set("https://a.example.com/3.m3u8", "z".repeat(40), 3);
+    expect(b.size).toBe(2);
+    expect(b.get("https://a.example.com/1.m3u8")).toBeUndefined();
+    b.set("https://a.example.com/big.m3u8", "w".repeat(101), 4);
+    expect(b.get("https://a.example.com/big.m3u8")).toBeUndefined();
+    b.dropBefore(3);
+    expect(b.get("https://a.example.com/2.m3u8")).toBeUndefined();
+    expect(b.get("https://a.example.com/3.m3u8")).toBe("z".repeat(40));
+  });
+});
+
+describe("diagnostic report", () => {
+  it("keeps host and path, never the query or fragment", () => {
+    expect(diagUrl("https://cdn.example.com/a/b.m3u8?hdnts=secret#x")).toBe("cdn.example.com/a/b.m3u8?…");
+    expect(diagUrl("https://cdn.example.com/a/b.m3u8")).toBe("cdn.example.com/a/b.m3u8");
+    expect(diagUrl("blob:https://x.example.com/1")).toBe("blob:…");
+  });
+
+  it("lists frames and events in time order", () => {
+    const text = formatDiagnostics({
+      generatedAt: Date.UTC(2026, 9, 13, 20, 0, 0),
+      version: "0.1.6",
+      platform: "win x86-64",
+      browser: "Chrome/141.0.0.0",
+      native: "installed",
+      tabUrl: "https://course.example.com/lesson/1?token=secret",
+      frames: [{ frameId: 7, url: "player.example.com/embed/1?…" }, { frameId: 0, url: "course.example.com/lesson/1?…" }],
+      entries: [
+        { at: 2000, frameId: 7, source: "frame", event: "master", url: "cdn.example.com/m.m3u8?…", detail: "5 variant(s)" },
+        { at: 1000, frameId: 7, source: "network", event: "HTTP 200", url: "cdn.example.com/m.m3u8?…" },
+        { at: 1500, frameId: null, source: "worker", event: "HTTP 200", url: "cdn.example.com/x.m3u8" },
+      ],
+    });
+    expect(text).toContain("video-down 0.1.6");
+    expect(text).not.toContain("secret");
+    expect(text.indexOf("#0 course.example.com")).toBeLessThan(text.indexOf("#7 player.example.com"));
+    const network = text.indexOf("network HTTP 200");
+    const worker = text.indexOf("SW    worker  HTTP 200");
+    const master = text.indexOf("frame   master");
+    expect(network).toBeGreaterThan(0);
+    expect(worker).toBeGreaterThan(network);
+    expect(master).toBeGreaterThan(worker);
+    expect(text).toContain("(5 variant(s))");
+  });
+});

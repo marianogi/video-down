@@ -7,11 +7,15 @@
  *    It marks the element with `data-video-down-drm="<key system>"` and dispatches
  *    a `video-down:drm` event on it.
  *
- * 2. Playlists recognised by content: some sites serve HLS/DASH playlists with
- *    URLs and Content-Types that say nothing (".../master", "text/plain"). When the
- *    page's fetch/XHR receives a small text body starting like a playlist, the URL
- *    is reported with a `video-down:manifest` event. The extension only accepts it
- *    after checking that the page really requested that URL.
+ * 2. Playlists as the player received them: when the page's fetch/XHR receives a
+ *    text body that starts like an HLS or DASH playlist, its URL and text are reported
+ *    with a `video-down:manifest` event. This recognises playlists whose URL and
+ *    Content-Type say nothing (".../master", "text/plain"), and keeps a copy of links
+ *    that cannot be read twice (single-use or short-lived tokens). The extension only
+ *    accepts a report after checking that the page really requested that URL.
+ *
+ * 3. Address changes: reports History API navigations at once (`video-down:navigation`),
+ *    so a video loaded right after an address change is known to be a new one.
  *
  * Wrappers are Proxies so `Function.prototype.toString` still reports native
  * code and pages that inspect these APIs keep working.
@@ -87,9 +91,39 @@
     true,
   );
 
+  // ------------------------------------------------------------------ address changes
+
+  // Single-page apps change the address with the History API and load the next video at once.
+  // The extension polls the address, which notices the change up to a second late; this event
+  // tells it at the moment it happens. (A page faking it only resets its own list of videos.)
+  const navigated = () => {
+    try {
+      document.dispatchEvent(new CustomEvent("video-down:navigation"));
+    } catch {
+      // never break the page
+    }
+  };
+  try {
+    for (const name of ["pushState", "replaceState"] as const) {
+      const proto = History.prototype;
+      proto[name] = new Proxy(proto[name], {
+        apply(target, thisArg, args) {
+          const result = Reflect.apply(target, thisArg, args);
+          navigated();
+          return result;
+        },
+      });
+    }
+    window.addEventListener("popstate", navigated);
+    window.addEventListener("hashchange", navigated);
+  } catch {
+    // ignore
+  }
+
   // ------------------------------------------------------------------ playlists by content
 
-  const MAX_SNIFF_BYTES = 2 * 1024 * 1024;
+  // Playlists are text and small; anything bigger is not read past its first bytes.
+  const MAX_TEXT = 2 * 1024 * 1024;
   const reported = new Set<string>();
 
   function kindOf(text: string): "hls" | "dash" | null {
@@ -99,20 +133,59 @@
     return null;
   }
 
-  function report(url: string, text: string): void {
+  /** Tell the extension, with the text the player received when it is complete. */
+  function report(url: string, text: string, complete: boolean): void {
     const kind = kindOf(text);
     if (!kind || reported.has(url) || !/^https?:/i.test(url)) return;
+    if (reported.size > 2000) reported.clear();
     reported.add(url);
-    document.dispatchEvent(new CustomEvent("video-down:manifest", { detail: JSON.stringify({ url, kind }) }));
+    const detail = complete && text.length <= MAX_TEXT ? { url, kind, text } : { url, kind };
+    document.dispatchEvent(new CustomEvent("video-down:manifest", { detail: JSON.stringify(detail) }));
   }
 
-  /** Bodies worth a look: text-like, small, and not obviously something else. */
+  /** Bodies worth a look: playlists by type, or small text that says nothing about itself. */
   function worthSniffing(contentType: string | null, length: string | null): boolean {
     const ct = (contentType || "").toLowerCase();
-    if (/mpegurl|dash\+xml/.test(ct)) return false; // the service worker already recognises these
-    if (/^(video|audio|image|font)\/|json|javascript|css|html|protobuf|grpc|wasm/.test(ct)) return false;
     const n = Number(length);
-    return !(Number.isFinite(n) && n > MAX_SNIFF_BYTES);
+    if (Number.isFinite(n) && n > MAX_TEXT) return false;
+    if (/mpegurl|dash\+xml/.test(ct)) return true;
+    return !/^(video|audio|image|font)\/|json|javascript|css|html|protobuf|grpc|wasm/.test(ct);
+  }
+
+  /**
+   * Read a copy of a fetch() response. Its first bytes decide: anything that does not start
+   * like a playlist is cancelled at once, so media, event streams and downloads are never
+   * buffered. A playlist is read to the end (up to MAX_TEXT).
+   */
+  async function readCopy(response: Response): Promise<void> {
+    const reader = response.clone().body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let text = "";
+    let checked = false;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (value) text += decoder.decode(value, { stream: true });
+        if (!checked && (done || text.trimStart().length >= 16)) {
+          checked = true;
+          if (!kindOf(text)) {
+            void reader.cancel().catch(() => undefined);
+            return;
+          }
+        }
+        if (text.length > MAX_TEXT) {
+          void reader.cancel().catch(() => undefined);
+          report(response.url, text, false);
+          return;
+        }
+        if (done) break;
+      }
+      text += decoder.decode();
+      report(response.url, text, true);
+    } catch {
+      // the page cancelled its request, or the body was not readable
+    }
   }
 
   try {
@@ -123,17 +196,7 @@
         promise
           .then((response) => {
             if (!response.ok || !worthSniffing(response.headers.get("content-type"), response.headers.get("content-length"))) return;
-            // Read only the first chunk of a copy and cancel it: the head is enough to recognise
-            // a playlist, and streaming responses (chat, event streams) are never buffered.
-            const reader = response.clone().body?.getReader();
-            if (!reader) return;
-            reader
-              .read()
-              .then(({ value }) => {
-                void reader.cancel().catch(() => undefined);
-                if (value) report(response.url, new TextDecoder().decode(value.subarray(0, 1024)));
-              })
-              .catch(() => undefined);
+            void readCopy(response);
           })
           .catch(() => undefined);
         return promise;
@@ -150,9 +213,17 @@
         thisArg.addEventListener("load", () => {
           try {
             if (thisArg.status < 200 || thisArg.status >= 300) return;
-            if (thisArg.responseType !== "" && thisArg.responseType !== "text") return;
             if (!worthSniffing(thisArg.getResponseHeader("content-type"), thisArg.getResponseHeader("content-length"))) return;
-            report(thisArg.responseURL, thisArg.responseText.slice(0, 1024));
+            const type = thisArg.responseType;
+            if (type === "" || type === "text") {
+              report(thisArg.responseURL, thisArg.responseText, true);
+            } else if (type === "arraybuffer" && thisArg.response instanceof ArrayBuffer) {
+              const bytes = new Uint8Array(thisArg.response);
+              if (bytes.byteLength > MAX_TEXT) return;
+              const decoder = new TextDecoder();
+              if (!kindOf(decoder.decode(bytes.subarray(0, 512)))) return;
+              report(thisArg.responseURL, decoder.decode(bytes), true);
+            }
           } catch {
             // ignore
           }

@@ -27,6 +27,7 @@ import { DirectDetectionHandler } from "./direct/direct-detection-handler";
 import { HlsDetectionHandler } from "./hls/hls-detection-handler";
 import { DashDetectionHandler } from "./dash/dash-detection-handler";
 import type { DetectionFailure } from "./detection-failure";
+import type { PlaylistBodies } from "./playlist-bodies";
 
 /** Configuration options for DetectionManager */
 export interface DetectionManagerOptions {
@@ -40,6 +41,10 @@ export interface DetectionManagerOptions {
   detectionCacheSize?: number;
   /** Max master playlists held in memory by HLS handler (default: 50) */
   masterPlaylistCacheSize?: number;
+  /** Playlists as the page's player received them */
+  bodies?: PlaylistBodies;
+  /** Notes for the diagnostic report */
+  onDiagnostic?: (event: string, url: string, detail?: string) => void;
 }
 
 /**
@@ -69,11 +74,14 @@ export class DetectionManager {
       onDetectionFailed: options.onDetectionFailed,
       detectionCacheSize: options.detectionCacheSize,
       masterPlaylistCacheSize: options.masterPlaylistCacheSize,
+      bodies: options.bodies,
+      onDiagnostic: options.onDiagnostic,
     });
     this.dashHandler = new DashDetectionHandler({
       onVideoDetected: (video) => this.handleVideoDetected(video),
       onDetectionFailed: options.onDetectionFailed,
       detectionCacheSize: options.detectionCacheSize,
+      bodies: options.bodies,
     });
   }
 
@@ -122,6 +130,12 @@ export class DetectionManager {
 
     // Perform initial scan (for direct video detection)
     this.directHandler.scanDOMForVideos();
+  }
+
+  /** Let a playlist be detected again after the page moved on (see content.ts). */
+  forget(url: string): void {
+    this.hlsHandler.forget(url);
+    this.dashHandler.forget(url);
   }
 
   /**

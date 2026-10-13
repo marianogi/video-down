@@ -7,6 +7,38 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.1.6 (2026-10-13)
+
+Más calidades encontradas cuando la página solo deja ver una. Todo es genérico, sin código para
+ninguna web concreta:
+
+- **La copia del reproductor.** La extensión guarda el texto de cada lista HLS/DASH tal como lo
+  recibió el reproductor de la página (solo si la página pidió de verdad esa dirección). Si la lista
+  no se puede volver a leer (enlace de un solo uso o token que caduca en segundos), las calidades se
+  sacan de esa copia. Antes el menú decía «no se ha podido leer» y solo ofrecía la calidad que se
+  estaba reproduciendo.
+- **Buscar la master junto a la variante.** Si la página solo pidió una calidad, se busca la lista
+  *master* donde la ponen los empaquetadores habituales: Unified Streaming
+  (`nombre-audio_eng=…-video_eng=….m3u8` → `nombre.m3u8`), Wowza, nginx-vod, sufijos tipo `_720p` y
+  carpetas por calidad. Como mucho cuatro intentos, y solo se acepta una master que incluya la lista
+  que se reproduce. Sus calidades heredan el token de la lista original.
+- **Páginas que reescriben su propia dirección** (quitan el token, añaden el minuto…): ya no se
+  borran las listas detectadas. Antes cualquier cambio de dirección vaciaba la lista y, si la master
+  ya se había pedido, se perdía para siempre.
+- **Webs de una sola página** (YouTube, cursos, plataformas): un vídeo nuevo se reconoce cuando el
+  reproductor vuelve a cargar, y en ese momento se descartan las listas del anterior. La página
+  avisa del cambio de dirección al instante, sin esperar al sondeo de cada segundo.
+- **Listas pedidas por el service worker de la página**: ahora se reconocen. Antes se ignoraban porque
+  no pertenecen a ninguna pestaña.
+- La descarga HLS ya no falla si la master no se puede volver a leer: con la calidad elegida, va
+  directa a ella.
+- **Informe de diagnóstico.** En el menú del vídeo (enlace «Informe de diagnóstico») y en el popup
+  (botón «Diagnóstico»): qué listas pidió la página, desde qué marco, qué respondió el servidor y qué
+  concluyó la extensión. Las direcciones van sin parámetros, sin tokens ni firmas. Se copia con un
+  botón para enviarlo cuando un vídeo no sale como se esperaba.
+- Pruebas nuevas: enlace de un solo uso con descarga, master encontrada junto a una variante con
+  token, dirección reescrita, web de una sola página y service worker. Las cinco fallan con la 0.1.5.
+
 ## 0.1.5 (2026-10-12)
 
 Correcciones generales del motor del navegador (todas heredadas de Media Bridge, encontradas
