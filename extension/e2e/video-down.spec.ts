@@ -221,6 +221,8 @@ test("2j · only one variant is requested: the master next to it is found and it
   // must inherit the token of the playlist the player used.
   await page.goto(`${baseUrl}/hls-variant-only.html`);
   await trigger(page).click();
+  // First the one quality the page asked for; then, without reopening, the master's qualities.
+  await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible({ timeout: 20_000 });
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /360p/, { height: 360 });

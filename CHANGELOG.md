@@ -32,6 +32,9 @@ ninguna web concreta:
   no pertenecen a ninguna pestaña.
 - La descarga HLS ya no falla si la master no se puede volver a leer: con la calidad elegida, va
   directa a ella.
+- Si el menú está abierto y aparece una lista mejor (por ejemplo, la master de la única calidad que
+  se mostraba), el menú se actualiza solo con sus calidades. Lo destapó la prueba en Windows limpio
+  de GitHub, más lenta que el equipo de desarrollo.
 - **Informe de diagnóstico.** En el menú del vídeo (enlace «Informe de diagnóstico») y en el popup
   (botón «Diagnóstico»): qué listas pidió la página, desde qué marco, qué respondió el servidor y qué
   concluyó la extensión. Las direcciones van sin parámetros, sin tokens ni firmas. Se copia con un

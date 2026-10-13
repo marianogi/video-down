@@ -9,7 +9,7 @@
 
 import { OVERLAY_CSS, DOWNLOAD_ICON, LOCK_ICON } from "./styles";
 import { t, formatBytes, formatEta } from "../../shared/i18n";
-import { route, type Route, type DirectSource } from "../../core/router";
+import { route, type Route, type RouteInput, type DirectSource } from "../../core/router";
 import { bindMedia } from "../../core/binding";
 import { readFacts, pageTitle, DRM_ATTR } from "../video-facts";
 import {
@@ -202,14 +202,22 @@ export class Overlay {
 
   /** Called when the media list of the frame changes. */
   onMediaChanged(): void {
+    const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
+    if (!tr) return;
     // A manifest that arrives late can turn "waiting" or "unknown stream" into a browser download.
     const r = this.lastRoute;
     const reroute =
       r?.kind === "pending" ||
       ((r?.kind === "native" || r?.kind === "need-native") && r.reason === "unknown-stream");
-    if (this.openKey && reroute) {
-      const tr = this.tracked.get(this.openKey);
-      if (tr) void this.renderRoute(tr);
+    if (reroute) {
+      void this.renderRoute(tr);
+      return;
+    }
+    // A better playlist may arrive while the menu is open, e.g. the master of the single
+    // quality on show, found a moment later: show its qualities instead.
+    if (r?.kind === "manifest") {
+      const next = route(this.routeInput(tr));
+      if (next.kind !== "manifest" || next.media.url !== r.media.url) void this.renderRoute(tr);
     }
   }
 
@@ -476,6 +484,16 @@ export class Overlay {
     ]);
   }
 
+  /** What the router needs for a video, as if the native component were missing. */
+  private routeInput(tr: Tracked): RouteInput {
+    return {
+      pageUrl: location.href,
+      video: readFacts(tr.video, tr.loadStartedAt, tr.firstSeenAt),
+      media: this.mediaFor(tr),
+      nativeAvailable: false,
+    };
+  }
+
   private mediaFor(tr: Tracked): VideoMetadata[] {
     const timings = [...this.tracked.values()].map((x) => ({ key: x.key, loadStartedAt: x.loadStartedAt }));
     return bindMedia(timings, this.deps.allMedia()).get(tr.key) ?? [];
@@ -488,12 +506,7 @@ export class Overlay {
 
     // Route first as if the native component were missing: direct files, HLS and DASH
     // never wait for it. Ask for its status (it may start a process) only when needed.
-    const input = {
-      pageUrl: location.href,
-      video: readFacts(tr.video, tr.loadStartedAt, tr.firstSeenAt),
-      media: this.mediaFor(tr),
-      nativeAvailable: false,
-    };
+    const input = this.routeInput(tr);
     let r = route(input);
     let nativeAvailable = false;
     if (r.kind === "need-native") {

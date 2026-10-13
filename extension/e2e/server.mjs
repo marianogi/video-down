@@ -8,7 +8,8 @@
 //   /once/master.m3u8?token=…  single-use link: the first request gets the playlist, any repeat a 403
 //   /once/…              the variants and segments of that master (no token needed)
 //   /opaque/master.m3u8  "playlist" that is not HLS (encrypted bytes), served as mpegurl
-//   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc
+//   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc, and the
+//                        master (clip.m3u8) answers 1.5 s late
 //   /protected/hls/cross-master.m3u8
 //                        master whose variants and segments live on ANOTHER host (localhost vs
 //                        127.0.0.1), all of them requiring the player's Referer
@@ -33,6 +34,16 @@ const usedTokens = new Set();
 
 export function startServer(port = 0) {
   const server = createServer((req, res) => {
+    // The master next to a lone variant answers late, so the menu is already open with that one
+    // quality when the master is found (as on a slow machine or CDN).
+    if (new URL(req.url, "http://localhost").pathname === "/media/uni/clip.m3u8") {
+      setTimeout(() => handle(req, res), 1500);
+      return;
+    }
+    handle(req, res);
+  });
+
+  function handle(req, res) {
     const url = new URL(req.url, "http://localhost");
     const playerOrigin = `http://127.0.0.1:${server.address().port}`;
     let pathname = url.pathname;
@@ -106,7 +117,7 @@ export function startServer(port = 0) {
     res.writeHead(200, { ...headers, "Content-Length": size });
     if (req.method === "HEAD") return res.end();
     createReadStream(path).pipe(res);
-  });
+  }
   return new Promise((ok) => server.listen(port, "127.0.0.1", () => ok(server)));
 }
 
