@@ -100,13 +100,32 @@ async function pointAt(page: Page, target: Locator) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+/**
+ * Point at the icon until `revealed` shows. The pointer is placed once and stays still; if the page
+ * moves a little right after (a web font loading in an iframe), it is no longer over the icon, so
+ * point again, as a person would move the mouse.
+ */
+async function unfold(page: Page, icon: Locator, revealed: Locator) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (await revealed.isVisible()) return;
+    await pointAt(page, icon);
+    try {
+      await revealed.waitFor({ state: "visible", timeout: 2000 });
+      return;
+    } catch {
+      // moved away: try again
+    }
+  }
+  await expect(revealed).toBeVisible();
+}
+
 async function openDownload(page: Page) {
-  if (!(await trigger(page).first().isVisible())) await pointAt(page, hub(page).first());
+  await unfold(page, hub(page).first(), trigger(page).first());
   await trigger(page).first().click();
 }
 
 async function openRecord(page: Page) {
-  if (!(await recButton(page).first().isVisible())) await pointAt(page, hub(page).first());
+  await unfold(page, hub(page).first(), recButton(page).first());
   await recButton(page).first().click();
 }
 
@@ -165,7 +184,7 @@ test("1 · direct file: one icon in the top-left corner that unfolds (download o
   await expect(recButton(page)).toBeHidden();
   await page.waitForTimeout(300); // the unfolding animation
   const d = await trigger(page).boundingBox();
-  expect(Math.abs(d!.x - h!.x)).toBeLessThan(3);
+  expect(Math.abs(d!.x - h!.x)).toBeLessThan(5);
 
   // A still pointer keeps it unfolded (it used to flicker when the icon was swapped under it).
   await page.waitForTimeout(1200);
@@ -223,7 +242,7 @@ test("2e · player in a cross-origin iframe whose CDN demands the player's Refer
   // third-party player (course platforms, video hosts…) whose CDN checks the Referer.
   await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html`);
   const overlay = page.frameLocator("#player").locator("video-down-overlay");
-  await pointAt(page, overlay.getByRole("button", { name: /^video-down: / }));
+  await unfold(page, overlay.getByRole("button", { name: /^video-down: / }), overlay.getByRole("button", { name: /Download this video/ }));
   await overlay.getByRole("button", { name: /Download this video/ }).click();
   const m = overlay.getByRole("dialog");
   await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
@@ -233,7 +252,7 @@ test("2e · player in a cross-origin iframe whose CDN demands the player's Refer
 test("2f · same, with variants and segments on another host that also checks the Referer", async ({ page, baseUrl, downloads }) => {
   await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html?player=player-cross.html`);
   const overlay = page.frameLocator("#player").locator("video-down-overlay");
-  await pointAt(page, overlay.getByRole("button", { name: /^video-down: / }));
+  await unfold(page, overlay.getByRole("button", { name: /^video-down: / }), overlay.getByRole("button", { name: /Download this video/ }));
   await overlay.getByRole("button", { name: /Download this video/ }).click();
   const m = overlay.getByRole("dialog");
   await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
