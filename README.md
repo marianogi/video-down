@@ -665,15 +665,18 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.0, 14/10/2026)
+### Estado de verificación (versión 0.2.1, 14/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.1.7; extensión, página de grabación y componente nativo en 0.2.0 | Correcto |
-| Windows 11 | Las 32 pruebas de extremo a extremo, incluidas YouTube, el muro con sesión, la grabación de un directo HLS y la captura con los cuatro perfiles | 32 de 32 |
-| Windows 11 | Qué graba MediaRecorder en este Chromium: MP4 con H.264 + AAC, VP9 y AV1, fragmentos de 1 s alineados con los fotogramas clave | Base del diseño |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo, grabación incluida | 31 de 31 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo, grabación incluida | 31 de 31 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.0; extensión y componente nativo en 0.2.1 | Correcto |
+| Windows 11 | Las 33 pruebas de extremo a extremo, incluidas YouTube, el muro con sesión, la grabación y la master de Unified Streaming con el audio declarado sin dirección | 33 de 33 |
+| Windows 11 | La prueba de esa master con el analizador de la 0.2.0 | Falla, como en el curso del usuario |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 32 de 32 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 32 de 32 (YouTube no se ejecuta en GitHub) |
+
+La causa del fallo de la 0.2.0 en un curso real se encontró con el informe de diagnóstico; la
+corrección se ha probado con una master local escrita igual, no en ese curso.
 
 La grabación se ha probado con un directo HLS simulado por el servidor de pruebas y con un vídeo local;
 no con una emisión real de internet.
