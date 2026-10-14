@@ -100,6 +100,8 @@ type Choice =
   | { kind: "native"; label: string; meta: string; payload: NativeDownloadPayload };
 
 const MIN_VIDEO_HEIGHT = 60;
+/** Pixels around the icon that still count as over it (a pointer resting on its edge). */
+const HOVER_MARGIN = 4;
 const OFFSET = 8;
 const FINISHED = new Set<DownloadStage>([DownloadStage.COMPLETED, DownloadStage.FAILED, DownloadStage.CANCELLED]);
 
@@ -218,6 +220,11 @@ export class Overlay {
       },
       { passive: true, capture: true },
     );
+    // The pointer left the page (or this frame): nothing is hovered any more.
+    document.documentElement.addEventListener("pointerleave", () => {
+      this.pointer = { x: -1, y: -1 };
+      this.scheduleLayout();
+    });
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       if (this.openKey) {
@@ -439,15 +446,10 @@ export class Overlay {
       e.stopPropagation();
       this.setExpanded(tr, !tr.expanded, true);
     });
+    // Hover is decided by where the pointer is (see layout()), not by enter/leave events: the
+    // icon is swapped for the buttons under a still pointer, and Chrome may not tell the new
+    // button that the pointer is over it until it moves; the icon would flicker.
     for (const button of [hub, trigger, recButton]) {
-      button.addEventListener("pointerenter", () => {
-        tr.pointerInside = true;
-        this.setExpanded(tr, true);
-      });
-      button.addEventListener("pointerleave", () => {
-        tr.pointerInside = false;
-        this.scheduleCollapse(tr);
-      });
       button.addEventListener("blur", () => this.scheduleCollapse(tr));
     }
 
@@ -533,8 +535,27 @@ export class Overlay {
       }
       const left = Math.min(Math.max(r.left, 0) + OFFSET, vw - 82);
       const top = Math.min(Math.max(r.top, 0) + OFFSET, vh - 42);
-      const unfolded = tr.expanded || this.openKey === tr.key;
       const canRecord = this.canRecord(tr);
+      // Pointer over the icon (or, unfolded, over its buttons): unfold; once it leaves, fold back.
+      const width = tr.expanded && canRecord ? 74 : 34;
+      const inside =
+        this.pointer.x >= left - HOVER_MARGIN &&
+        this.pointer.x <= left + width + HOVER_MARGIN &&
+        this.pointer.y >= top - HOVER_MARGIN &&
+        this.pointer.y <= top + 34 + HOVER_MARGIN;
+      if (inside) {
+        tr.pointerInside = true;
+        if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
+        tr.collapseTimer = null;
+        if (!tr.expanded) {
+          tr.expanded = true;
+          tr.hub.setAttribute("aria-expanded", "true");
+        }
+      } else if (tr.pointerInside) {
+        tr.pointerInside = false;
+        this.scheduleCollapse(tr);
+      }
+      const unfolded = tr.expanded || this.openKey === tr.key;
       if (canRecord !== tr.canRecord) {
         tr.canRecord = canRecord;
         this.updateRecButton(tr);

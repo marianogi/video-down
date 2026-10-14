@@ -163,8 +163,14 @@ test("1 · direct file: one icon in the top-left corner that unfolds (download o
   await pointAt(page, hub(page));
   await expect(trigger(page)).toBeVisible();
   await expect(recButton(page)).toBeHidden();
+  await page.waitForTimeout(300); // the unfolding animation
   const d = await trigger(page).boundingBox();
   expect(Math.abs(d!.x - h!.x)).toBeLessThan(3);
+
+  // A still pointer keeps it unfolded (it used to flicker when the icon was swapped under it).
+  await page.waitForTimeout(1200);
+  await expect(trigger(page)).toBeVisible();
+  await expect(hub(page)).toBeHidden();
 
   // The pointer leaves: it folds back into one icon.
   await page.mouse.move(v!.x + v!.width - 10, v!.y + v!.height - 10);

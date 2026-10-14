@@ -11,7 +11,10 @@ En `chrome://extensions`, las compilaciones que no son de publicación aparecen 
 
 - **Un solo icono de «play»** en cada vídeo. Al pasar el ratón (o al pulsarlo, con el teclado o en
   pantallas táctiles) se desdobla en los botones de descarga y de grabación; Escape lo pliega. Plegado,
-  sigue mostrando el anillo de progreso de una descarga y un punto rojo si se está grabando.
+  sigue mostrando el anillo de progreso de una descarga y un punto rojo si se está grabando. El
+  desdoble se decide por la posición del ratón, no por los avisos de entrada y salida de Chrome: con el
+  ratón quieto sobre el icono, Chrome no siempre avisa al botón que aparece debajo, y el icono habría
+  parpadeado (lo destapó la prueba en macOS limpio de GitHub).
 - **Grabar, solo en directos.** El botón de grabación aparece solo en emisiones en directo: duración
   infinita (directos y flujos en tiempo real, como WebRTC) o lista HLS/DASH en directo. Lo demás se
   descarga entero.
