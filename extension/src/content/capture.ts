@@ -7,7 +7,7 @@
  * Runtime messages carry JSON only, so the bytes travel base64-encoded, in order.
  */
 
-import { CAPTURE_PROFILES, pickMimeType, profileById, videoBitrate } from "../core/recording/profiles";
+import { CAPTURE_PROFILES, pickMimeType, profileById, videoBitrate, videoOnlyMimeType } from "../core/recording/profiles";
 
 export interface CaptureHandle {
   stop(): void;
@@ -17,6 +17,12 @@ export type CaptureError = "unsupported" | "protected" | "no-video";
 
 const SLICE_MS = 1000;
 const KEYFRAME_MS = 2000;
+/**
+ * MediaRecorder waits for every track before it writes anything. If the page's audio never
+ * starts (e.g. it comes from an AudioContext the page has not resumed), nothing would ever be
+ * recorded: after this long without data, the capture restarts with the picture only.
+ */
+const STALL_MS = 8000;
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -71,6 +77,8 @@ export function startCapture(
   } catch {
     return { error: "unsupported" };
   }
+  let recordedBytes = 0;
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
 
   const port = chrome.runtime.connect({ name: `vd-capture:${recordingId}` });
   let ended = false;
@@ -87,6 +95,7 @@ export function startCapture(
   const finish = (reason: string) => {
     if (ended) return;
     ended = true;
+    clearTimeout(stallTimer);
     for (const t of stream.getTracks()) t.removeEventListener("ended", onTrackEnded);
     video.removeEventListener("emptied", onEmptied);
     if (recorder.state !== "inactive") {
@@ -106,15 +115,38 @@ export function startCapture(
   // The player loaded something else into the element (another video, or it gave up).
   const onEmptied = () => finish("source-changed");
 
-  recorder.ondataavailable = (event) => {
+  const onData = (event: BlobEvent) => {
     if (!event.data.size) return;
+    recordedBytes += event.data.size;
     const blob = event.data;
     queue = queue.then(async () => {
       const bytes = new Uint8Array(await blob.arrayBuffer());
       post({ type: "chunk", data: toBase64(bytes) });
     });
   };
+  recorder.ondataavailable = onData;
   recorder.onerror = () => finish("recorder-error");
+
+  const restartWithoutAudio = () => {
+    const videoOnly = videoOnlyMimeType(mimeType);
+    if (ended || !videoOnly || !MediaRecorder.isTypeSupported(videoOnly)) return;
+    const stalled = recorder;
+    stalled.ondataavailable = null;
+    stalled.onerror = null;
+    stalled.onstop = null;
+    if (stalled.state !== "inactive") stalled.stop();
+    try {
+      recorder = new MediaRecorder(new MediaStream(stream.getVideoTracks()), { ...options, mimeType: videoOnly });
+    } catch {
+      return finish("recorder-error");
+    }
+    recorder.ondataavailable = onData;
+    recorder.onerror = () => finish("recorder-error");
+    // Whatever header the stalled recorder wrote is discarded by the worker.
+    queue = queue.then(() => post({ type: "restart" }));
+    queue = queue.then(() => post({ type: "info", mimeType: videoOnly, width: video.videoWidth, height: video.videoHeight, audio: false }));
+    recorder.start(SLICE_MS);
+  };
   port.onDisconnect.addListener(() => {
     if (!ended) finish("stopped");
   });
@@ -127,5 +159,11 @@ export function startCapture(
 
   post({ type: "info", mimeType, width: video.videoWidth, height: video.videoHeight });
   recorder.start(SLICE_MS);
+  if (stream.getAudioTracks().length > 0) {
+    // A header alone is a couple of KB: real recording means more than that.
+    stallTimer = setTimeout(() => {
+      if (recordedBytes < 4096) restartWithoutAudio();
+    }, STALL_MS);
+  }
   return { stop: () => finish("stopped") };
 }

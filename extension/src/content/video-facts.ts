@@ -45,6 +45,29 @@ export function readSources(video: HTMLVideoElement): DirectSource[] {
   return out;
 }
 
+function withoutHash(url: string): string {
+  const i = url.indexOf("#");
+  return i >= 0 ? url.slice(0, i) : url;
+}
+
+/**
+ * The page a video previews. Thumbnails that play on hover (YouTube, Vimeo, Twitch, news sites…)
+ * sit inside a link to the full video: clicking the video opens another page. Then the video on
+ * screen is only a teaser, and what the user wants is that page's video. Generic: any video inside
+ * a link to another http(s) page.
+ */
+export function previewTarget(video: HTMLVideoElement): string | undefined {
+  const link = video.closest("a[href]") as HTMLAnchorElement | null;
+  const href = link?.href;
+  if (!href || !isHttp(href)) return undefined;
+  return withoutHash(href) === withoutHash(location.href) ? undefined : href;
+}
+
+/** A live broadcast: an unbounded timeline, as players give to live streams and to MediaStreams. */
+export function isLiveElement(video: HTMLVideoElement): boolean {
+  return video.duration === Infinity;
+}
+
 export function readFacts(video: HTMLVideoElement, loadStartedAt: number, firstSeenAt: number): VideoFacts {
   const facts: VideoFacts = {
     src: video.currentSrc || video.src || "",
@@ -53,6 +76,8 @@ export function readFacts(video: HTMLVideoElement, loadStartedAt: number, firstS
     loadingForMs: Date.now() - (loadStartedAt || firstSeenAt),
   };
   if (Number.isFinite(video.duration) && video.duration > 0) facts.duration = video.duration;
+  const preview = previewTarget(video);
+  if (preview) facts.previewOf = preview;
   return facts;
 }
 

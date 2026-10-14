@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fixVp9Level, Mp4FragmentSplitter, parseMoov } from "../src/core/recording/mp4-fragments";
 import { liveUpdate, reloadDelayMs, hasUnsupportedKey, LIVE_EDGE_SEGMENTS } from "../src/core/recording/hls-live";
 import { mediaPlaylist, masterPlaylist, parseLocalUrl, partUrl, initUrl, playlistUrl } from "../src/core/recording/local-playlist";
-import { CAPTURE_PROFILES, pickMimeType, videoBitrate, bytesPerHour, codecLabel, profileById } from "../src/core/recording/profiles";
+import { CAPTURE_PROFILES, pickMimeType, videoBitrate, bytesPerHour, codecLabel, profileById, videoOnlyMimeType } from "../src/core/recording/profiles";
 
 // ------------------------------------------------------------------ a tiny fragmented MP4, byte by byte
 
@@ -185,6 +185,12 @@ describe("capture profiles", () => {
     expect(codecLabel('video/mp4;codecs="av01.0.08M.08,opus"')).toBe("AV1");
     expect(codecLabel('video/mp4;codecs="vp9,opus"')).toBe("VP9");
     expect(CAPTURE_PROFILES.map((p) => p.id)).toEqual(["quality", "balanced", "small", "light"]);
+  });
+
+  it("can drop the audio codec, for a picture-only recording", () => {
+    expect(videoOnlyMimeType('video/mp4;codecs="avc1.640028,mp4a.40.2"')).toBe('video/mp4;codecs="avc1.640028"');
+    expect(videoOnlyMimeType('video/mp4;codecs="vp9,opus"')).toBe('video/mp4;codecs="vp9"');
+    expect(videoOnlyMimeType('audio/mp4;codecs="opus"')).toBeNull();
   });
 
   it("scale the bitrate with the picture, within limits", () => {

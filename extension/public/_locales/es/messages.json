@@ -172,5 +172,10 @@
   "recNoPlayer": { "message": "Este navegador no puede reproducir la grabación aquí, pero se sigue grabando." },
   "popupRecordings": { "message": "Grabaciones" },
   "popupOpenRecording": { "message": "Abrir" },
-  "failParse": { "message": "La lista se ha leído, pero la extensión no la ha entendido. Envía el informe de diagnóstico (enlace de abajo)." }
+  "failParse": { "message": "La lista se ha leído, pero la extensión no la ha entendido. Envía el informe de diagnóstico (enlace de abajo)." },
+  "hubLabel": { "message": "video-down: descargar o grabar" },
+  "hubLabelRecording": { "message": "video-down: grabando" },
+  "hubLabelDownload": { "message": "video-down: descargar" },
+  "needNativePreview": { "message": "Esto es una previsualización: lo que se descarga es el vídeo completo de la página a la que lleva, y para eso hace falta el componente nativo." },
+  "recNoAudio": { "message": "El audio de la página no llegaba: se graba solo la imagen." }
 }

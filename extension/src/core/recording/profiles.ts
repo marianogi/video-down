@@ -89,6 +89,17 @@ export function hlsCodecs(mimeType: string): string | null {
   return mapped.length ? mapped.join(",") : null;
 }
 
+/** The same MediaRecorder type without its audio codec, for a picture-only recording. */
+export function videoOnlyMimeType(mimeType: string): string | null {
+  const m = mimeType.match(/^([^;]+);\s*codecs="?([^"]+)"?$/i);
+  if (!m) return null;
+  const video = m[2]!
+    .split(",")
+    .map((c) => c.trim())
+    .filter((c) => !/^(mp4a|opus|vorbis|flac)/i.test(c));
+  return video.length ? `${m[1]};codecs="${video.join(",")}"` : null;
+}
+
 /** Approximate size of one hour, in bytes. */
 export function bytesPerHour(bitsPerSecond: number): number {
   return Math.round((bitsPerSecond * 3600) / 8);

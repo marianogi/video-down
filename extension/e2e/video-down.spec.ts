@@ -86,6 +86,29 @@ const test = base.extend<Fixtures, WorkerFixtures>({
 const trigger = (page: Page, name = /Download this video|DRM-protected video/) =>
   page.locator("video-down-overlay").getByRole("button", { name });
 const menu = (page: Page) => page.locator("video-down-overlay").getByRole("dialog");
+/** The one icon on each video ("play"); hovering it unfolds the download and record buttons. */
+const hub = (page: Page) => page.locator("video-down-overlay").getByRole("button", { name: /^video-down: / });
+const recButton = (page: Page) => page.locator("video-down-overlay").getByRole("button", { name: /Record this video|Recording this video/ });
+
+/**
+ * Move the pointer onto the icon, as a person would. (Playwright's hover() insists on the target
+ * staying visible, but the icon unfolds, and so disappears, the moment the pointer reaches it.)
+ */
+async function pointAt(page: Page, target: Locator) {
+  const box = await target.boundingBox();
+  if (!box) throw new Error("the icon is not on screen");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+async function openDownload(page: Page) {
+  if (!(await trigger(page).first().isVisible())) await pointAt(page, hub(page).first());
+  await trigger(page).first().click();
+}
+
+async function openRecord(page: Page) {
+  if (!(await recButton(page).first().isVisible())) await pointAt(page, hub(page).first());
+  await recButton(page).first().click();
+}
 
 function newestFile(dir: string, since: number): string | null {
   const files = readdirSync(dir)
@@ -125,16 +148,30 @@ async function downloadAndCheck(
 
 // ---------------------------------------------------------------- cases
 
-test("1 · direct file: icon in the top-left corner and one entry per <source>", async ({ page, baseUrl, downloads }) => {
+test("1 · direct file: one icon in the top-left corner that unfolds (download only: not live)", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/direct.html`);
-  const button = trigger(page);
-  await expect(button).toBeVisible();
+  // A single "play" icon until the pointer reaches it.
+  await expect(hub(page)).toBeVisible();
+  await expect(trigger(page)).toBeHidden();
+  await expect(recButton(page)).toBeHidden();
   const v = await page.locator("video").boundingBox();
-  const b = await button.boundingBox();
-  expect(Math.abs(b!.x - (v!.x + 8))).toBeLessThan(3);
-  expect(Math.abs(b!.y - (v!.y + 8))).toBeLessThan(3);
+  const h = await hub(page).boundingBox();
+  expect(Math.abs(h!.x - (v!.x + 8))).toBeLessThan(3);
+  expect(Math.abs(h!.y - (v!.y + 8))).toBeLessThan(3);
 
-  await button.click();
+  // Hover: it unfolds; download appears where the icon was. Not a live broadcast: no record button.
+  await pointAt(page, hub(page));
+  await expect(trigger(page)).toBeVisible();
+  await expect(recButton(page)).toBeHidden();
+  const d = await trigger(page).boundingBox();
+  expect(Math.abs(d!.x - h!.x)).toBeLessThan(3);
+
+  // The pointer leaves: it folds back into one icon.
+  await page.mouse.move(v!.x + v!.width - 10, v!.y + v!.height - 10);
+  await expect(hub(page)).toBeVisible({ timeout: 3000 });
+  await expect(trigger(page)).toBeHidden();
+
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible();
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /360p/, { height: 360 });
@@ -142,7 +179,7 @@ test("1 · direct file: icon in the top-left corner and one entry per <source>",
 
 test("2 · HLS master: one entry per variant, merged with ffmpeg.wasm", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/hls.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /720p/, { height: 720 });
@@ -150,7 +187,7 @@ test("2 · HLS master: one entry per variant, merged with ffmpeg.wasm", async ({
 
 test("2a · HLS master whose audio rendition has no URI (Unified Streaming): every quality listed", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/hls-muxed-audio.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /360p/, { height: 360 });
@@ -158,20 +195,20 @@ test("2a · HLS master whose audio rendition has no URI (Unified Streaming): eve
 
 test("2b · HLS served without .m3u8 extension is recognised by Content-Type", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/hls-noext.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
 });
 
 test("2c · HLS with AES-128 (not DRM) is decrypted and saved", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/hls-aes.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
   await downloadAndCheck(page, downloads, /Original file/, { height: 360 });
 });
 
 test("2d · HLS served as text/plain without extension is recognised by its content", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/odd-type.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
 });
 
@@ -180,6 +217,7 @@ test("2e · player in a cross-origin iframe whose CDN demands the player's Refer
   // third-party player (course platforms, video hosts…) whose CDN checks the Referer.
   await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html`);
   const overlay = page.frameLocator("#player").locator("video-down-overlay");
+  await pointAt(page, overlay.getByRole("button", { name: /^video-down: / }));
   await overlay.getByRole("button", { name: /Download this video/ }).click();
   const m = overlay.getByRole("dialog");
   await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
@@ -189,6 +227,7 @@ test("2e · player in a cross-origin iframe whose CDN demands the player's Refer
 test("2f · same, with variants and segments on another host that also checks the Referer", async ({ page, baseUrl, downloads }) => {
   await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html?player=player-cross.html`);
   const overlay = page.frameLocator("#player").locator("video-down-overlay");
+  await pointAt(page, overlay.getByRole("button", { name: /^video-down: / }));
   await overlay.getByRole("button", { name: /Download this video/ }).click();
   const m = overlay.getByRole("dialog");
   await expect(m.getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
@@ -198,7 +237,7 @@ test("2f · same, with variants and segments on another host that also checks th
 test("2g · single-use playlist link: the player's own copy lists the qualities and the download works", async ({ page, baseUrl, downloads }) => {
   // The extension cannot read this master again (403), but the page's player already did.
   await page.goto(`${baseUrl}/once.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 20_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /360p/, { height: 360 });
@@ -206,7 +245,7 @@ test("2g · single-use playlist link: the player's own copy lists the qualities 
 
 test("2h · playlist in a platform's own encrypted format: explained, not broken", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/opaque.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByText(/not standard HLS or DASH/)).toBeVisible({ timeout: 20_000 });
   await expect(menu(page).getByRole("button", { name: /native component/ })).toHaveCount(0);
 });
@@ -218,7 +257,7 @@ for (const [name, what] of [
 ] as const) {
   test(`2i · ${what}`, async ({ page, baseUrl, downloads }) => {
     await page.goto(`${baseUrl}/${name}.html`);
-    await trigger(page).click();
+    await openDownload(page);
     await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
     await downloadAndCheck(page, downloads, /Original file/, { height: 360 });
   });
@@ -228,7 +267,7 @@ test("2j · only one variant is requested: the master next to it is found and it
   // Unified Origin names and a token on every playlist: the variants listed by the found master
   // must inherit the token of the playlist the player used.
   await page.goto(`${baseUrl}/hls-variant-only.html`);
-  await trigger(page).click();
+  await openDownload(page);
   // First the one quality the page asked for; then, without reopening, the master's qualities.
   await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible({ timeout: 20_000 });
@@ -249,7 +288,7 @@ test("2k · the page rewrites its own address while the same video plays: qualit
   await page.goto(`${baseUrl}/hls-rewrite-url.html`);
   await expect(page).toHaveTitle("rewritten", { timeout: 10_000 });
   await page.waitForTimeout(1500); // longer than the extension's address polling
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
 });
@@ -257,7 +296,7 @@ test("2k · the page rewrites its own address while the same video plays: qualit
 test("2l · single-page app loads another video: the previous one's qualities are gone", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/hls-spa.html`);
   await expect(page).toHaveTitle("second", { timeout: 15_000 });
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /720p/ })).toHaveCount(0);
 });
@@ -265,14 +304,49 @@ test("2l · single-page app loads another video: the previous one's qualities ar
 test("2m · playlists fetched by the page's service worker are recognised", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/swtest/sw.html`);
   await expect(page).toHaveTitle("controlled", { timeout: 15_000 });
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
 });
 
-// ---------------------------------------------------------------- recording
+test("11b · a live broadcast whose audio never starts: the capture records the picture only", async ({ page, baseUrl, downloads, extContext }) => {
+  await page.goto(`${baseUrl}/capture-silent.html`);
+  await expect(page).toHaveTitle("playing", { timeout: 10_000 });
+  await openRecord(page);
+  const balanced = menu(page).getByRole("button", { name: /Balanced/ });
+  await expect(balanced).toBeVisible({ timeout: 10_000 });
+  const opened = extContext.waitForEvent("page");
+  await balanced.click();
+  const recorder = await opened;
+  const file = await recordAndSave(recorder, downloads, 3);
+  await expect(recorder.locator("#notice")).toContainText("only the picture");
+  const info = probe(file);
+  expect(info.height).toBe(360);
+  expect(info.audio).toBeUndefined();
+  await recorder.close();
+});
 
-const recButton = (page: Page) => page.locator("video-down-overlay").getByRole("button", { name: /Record this video|Recording this video/ });
+test("12 · a preview inside a link: the full video of that page, never the teaser", async ({ page, baseUrl, downloads }) => {
+  await page.goto(`${baseUrl}/preview.html`);
+  await pointAt(page, hub(page));
+  await expect(trigger(page)).toBeVisible();
+  await expect(recButton(page)).toBeHidden();
+  await trigger(page).click();
+  if (process.env.VD_E2E_NATIVE === "1") {
+    // yt-dlp reads the linked page: its title and its 720p video, not the 360p teaser.
+    await expect(menu(page).getByText("Full video")).toBeVisible({ timeout: 60_000 });
+    await menu(page).locator(".vd-list button").first().click();
+    await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
+    const saved = (await menu(page).locator(".vd-path").first().textContent())?.trim() ?? "";
+    expect(probe(saved)).toMatchObject({ height: 720 });
+    rmSync(saved, { force: true });
+  } else {
+    await expect(menu(page).getByText(/This is a preview|native component is needed|full video/i).first()).toBeVisible({ timeout: 30_000 });
+  }
+  await expect(menu(page).getByRole("button", { name: /Original file|360p/ })).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------- recording
 
 /** The recorder page: wait for something recorded, stop, save, and check the file with ffprobe. */
 async function recordAndSave(recorder: Page, downloads: string, seconds: number) {
@@ -302,9 +376,16 @@ function durationOf(file: string): number {
   }
 }
 
-test("10 · live HLS: exact copy, time-shift player, saved as MP4", async ({ page, baseUrl, downloads, extContext }) => {
+test("10 · live HLS: the icon unfolds into download and record; exact copy, time-shift, MP4", async ({ page, baseUrl, downloads, extContext }) => {
   await page.goto(`${baseUrl}/live.html`);
-  await recButton(page).click();
+  // A live broadcast: both buttons, record next to download.
+  await pointAt(page, hub(page));
+  await expect(recButton(page)).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(300); // the unfolding animation
+  const d = await trigger(page).boundingBox();
+  const r = await recButton(page).boundingBox();
+  expect(r!.x).toBeGreaterThan(d!.x + d!.width);
+  await openRecord(page);
   const copy = menu(page).getByRole("button", { name: /360p/ });
   await expect(copy).toBeVisible({ timeout: 20_000 });
   const opened = extContext.waitForEvent("page");
@@ -328,7 +409,7 @@ for (const [profile, codecs] of [
   test(`11 · any player: capture with the "${profile}" profile, time-shift player, saved as MP4`, async ({ page, baseUrl, downloads, extContext }) => {
     await page.goto(`${baseUrl}/capture.html`);
     await expect(page).toHaveTitle("playing", { timeout: 10_000 });
-    await recButton(page).click();
+    await openRecord(page);
     await expect(menu(page).getByText("Capture the player")).toBeVisible({ timeout: 10_000 });
     const option = menu(page).getByRole("button", { name: new RegExp(profile) });
     test.skip((await option.count()) === 0, `this browser cannot record the "${profile}" profile`);
@@ -348,7 +429,7 @@ for (const [profile, codecs] of [
 
 test("3 · DASH: video representations listed, audio merged", async ({ page, baseUrl, downloads }) => {
   await page.goto(`${baseUrl}/dash.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /360p/, { height: 360 });
@@ -356,7 +437,7 @@ test("3 · DASH: video representations listed, audio merged", async ({ page, bas
 
 test("8a · DRM declared in the DASH manifest: warning, no resolutions", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/drm-dash.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await expect(menu(page).getByText(/DRM-protected video/)).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByText(/Widevine/)).toBeVisible();
   await expect(menu(page).getByRole("button", { name: /\d{3,4}p/ })).toHaveCount(0);
@@ -366,6 +447,7 @@ test("8b · DRM through EME on the element: lock icon and warning", async ({ pag
   await page.goto(`${baseUrl}/drm-eme.html`);
   await expect(page).toHaveTitle("EME ready");
   const lock = trigger(page, /DRM-protected video/);
+  await pointAt(page, hub(page));
   await expect(lock).toBeVisible();
   await lock.click();
   await expect(menu(page).getByRole("alert")).toContainText(/DRM-protected video/);
@@ -374,7 +456,7 @@ test("8b · DRM through EME on the element: lock icon and warning", async ({ pag
 
 test("5 · blob video with no manifest: no browser download is offered", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/unknown.html`);
-  await trigger(page).click();
+  await openDownload(page);
   // Either the native component is missing (explanation) or it is installed and yt-dlp
   // cannot read a local test page (error). In both cases no browser resolution is offered.
   await expect(
@@ -385,16 +467,23 @@ test("5 · blob video with no manifest: no browser download is offered", async (
 test("tiny decorative videos get no icon", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/tiny.html`);
   await page.waitForTimeout(1500);
+  await expect(hub(page)).toBeHidden();
   await expect(trigger(page)).toBeHidden();
 });
 
-test("Escape closes the menu and returns focus to the icon", async ({ page, baseUrl }) => {
+test("keyboard: the icon unfolds with Enter, Escape closes the menu and then folds it back", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/direct.html`);
-  await trigger(page).click();
+  await hub(page).focus();
+  await page.keyboard.press("Enter");
+  await expect(trigger(page)).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(menu(page)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu(page)).toBeHidden();
   await expect(trigger(page)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(hub(page)).toBeFocused();
+  await expect(trigger(page)).toBeHidden();
 });
 
 // ---------------------------------------------------------------- online (opt-in)
@@ -409,7 +498,7 @@ test("4 · YouTube through the native component (VD_E2E_ONLINE=1)", async ({ pag
       break;
     }
   }
-  await trigger(page).first().click();
+  await openDownload(page);
   await expect(menu(page).getByText(/native component/i)).toBeVisible({ timeout: 60_000 });
   await menu(page).getByRole("button", { name: /^144p/ }).click();
   await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
@@ -426,7 +515,7 @@ test("6 · large HLS is handed to the native component (VD_E2E_NATIVE=1)", async
   await worker.evaluate(() => chrome.storage.local.set({ storage_config: { preferNativeAboveMb: 0 } }));
   try {
     await page.goto(`${baseUrl}/hls.html`);
-    await trigger(page).click();
+    await openDownload(page);
     await menu(page).getByRole("button", { name: /720p/ }).click({ timeout: 15_000 });
     await expect(menu(page).getByText("yt-dlp")).toBeVisible({ timeout: 30_000 });
     await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
@@ -466,7 +555,7 @@ test("parity · the menu lists the same HLS and DASH resolutions as yt-dlp (VD_E
       (a, b) => b - a,
     );
     await page.goto(`${baseUrl}/${pagePath}`);
-    await trigger(page).click();
+    await openDownload(page);
     await expect(menu(page).getByRole("button", { name: /\d{3,4}p/ }).first()).toBeVisible({ timeout: 15_000 });
     const labels = await menu(page).locator(".vd-option-main").allTextContents();
     const ours = labels.map((l) => Number(l.match(/(\d{3,4})p/)?.[1])).filter(Boolean);
@@ -480,7 +569,7 @@ test("9 · feed of a site behind a login: the post's own link, with the site's s
   await extContext.addCookies([{ name: "vdsession", value: "ok", domain: "127.0.0.1", path: "/" }]);
   try {
     await page.goto(`${baseUrl}/feed.html`);
-    await trigger(page).click();
+    await openDownload(page);
     // yt-dlp does not know the feed, tries the post's link, is refused without a session (403)
     // and then gets the qualities with the site's cookies.
     await expect(menu(page).getByText(/using your session on this site/)).toBeVisible({ timeout: 90_000 });
@@ -499,7 +588,7 @@ test("9 · feed of a site behind a login: the post's own link, with the site's s
 test("7 · the browser engine fails → the same job continues with yt-dlp (VD_E2E_NATIVE=1)", async ({ page, baseUrl }) => {
   test.skip(process.env.VD_E2E_NATIVE !== "1", "needs the installed native component");
   await page.goto(`${baseUrl}/hls-garbage.html`);
-  await trigger(page).click();
+  await openDownload(page);
   await menu(page).getByRole("button", { name: /Original file/ }).click({ timeout: 15_000 });
   // The job row switches from "browser" to "yt-dlp" without the user doing anything.
   await expect(menu(page).locator(".vd-job .vd-option-meta", { hasText: "yt-dlp" })).toBeVisible({ timeout: 60_000 });

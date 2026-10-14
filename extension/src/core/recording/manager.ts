@@ -181,13 +181,14 @@ export function onCapturePort(port: chrome.runtime.Port): boolean {
     ending = true;
     void rec.receiver!.finish().then(() => finish(rec.info.id, reason === "source-ended" ? "ended" : "stopped"));
   };
-  port.onMessage.addListener((msg: { type?: string; data?: string; reason?: string; mimeType?: string }) => {
+  port.onMessage.addListener((msg: { type?: string; data?: string; reason?: string; mimeType?: string; audio?: boolean }) => {
     if (msg?.type === "info" && typeof msg.mimeType === "string") {
       const codecs = hlsCodecs(msg.mimeType);
-      if (codecs) {
-        rec.info.codecs = codecs;
-        void save(rec);
-      }
+      if (codecs) rec.info.codecs = codecs;
+      if (msg.audio === false) rec.info.noAudio = true;
+      void save(rec);
+    } else if (msg?.type === "restart") {
+      void rec.receiver!.reset();
     } else if (msg?.type === "chunk" && typeof msg.data === "string") {
       rec.receiver!.push(msg.data).catch((err) => {
         logger.error("capture data", err);

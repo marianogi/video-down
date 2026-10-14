@@ -7,6 +7,24 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.2 (2026-10-14)
+
+- **Un solo icono de «play»** en cada vídeo. Al pasar el ratón (o al pulsarlo, con el teclado o en
+  pantallas táctiles) se desdobla en los botones de descarga y de grabación; Escape lo pliega. Plegado,
+  sigue mostrando el anillo de progreso de una descarga y un punto rojo si se está grabando.
+- **Grabar, solo en directos.** El botón de grabación aparece solo en emisiones en directo: duración
+  infinita (directos y flujos en tiempo real, como WebRTC) o lista HLS/DASH en directo. Lo demás se
+  descarga entero.
+- **Previsualizaciones.** Un vídeo dentro de un enlace a otra página (las miniaturas de YouTube que se
+  reproducen al pasar el ratón, y las de cualquier web) es un avance de esa página: la descarga es del
+  vídeo completo de la página a la que lleva, con yt-dlp, nunca del avance. Ahí no se ofrece grabar.
+  Comprobado en YouTube: el avance es un `<video>` dentro de su enlace `/watch?v=…`.
+- **Captura con el audio atascado.** MediaRecorder no escribe nada mientras alguna pista no entrega
+  datos; si el audio de la página nunca arranca, la captura se reinicia a los 8 s con la imagen sola y
+  la pestaña de grabación lo avisa.
+- Pruebas: 63 unitarias; de extremo a extremo, el icono que se desdobla (ratón y teclado), una
+  previsualización dentro de un enlace, un directo sin lista (MediaStream) y uno sin audio.
+
 ## 0.2.1 (2026-10-14)
 
 - **Masters de Unified Streaming: salen todas las calidades.** Esas listas declaran la pista de audio

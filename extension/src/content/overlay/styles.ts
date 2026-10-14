@@ -71,6 +71,24 @@ export const OVERLAY_CSS = `
 .vd-trigger:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; opacity: 1; }
 .vd-trigger svg { width: 18px; height: 18px; display: block; }
 .vd-trigger[data-state="drm"] { background: rgba(120, 53, 15, 0.85); }
+/* One "play" icon; on hover, focus or press it unfolds into download and record. */
+.vd-hub svg { width: 16px; height: 16px; margin-left: 2px; }
+.vd-hub.vd-recording::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #ffffff;
+  animation: vd-blink 1.2s ease-in-out infinite;
+}
+.vd-trigger:not(.vd-hub) { animation: vd-unfold 150ms ease-out; }
+.vd-trigger.vd-rec { animation-name: vd-slide-out; }
+@keyframes vd-unfold { from { opacity: 0; transform: scale(0.8); } }
+@keyframes vd-slide-out { from { opacity: 0; transform: translateX(-40px) scale(0.8); } }
 .vd-rec svg circle { fill: #ef4444; }
 .vd-rec.vd-recording { opacity: 1; background: #dc2626; border-color: #fecaca; }
 .vd-rec.vd-recording svg circle { fill: #ffffff; animation: vd-blink 1.2s ease-in-out infinite; }
@@ -225,6 +243,7 @@ export const OVERLAY_CSS = `
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .vd-trigger:not(.vd-hub), .vd-hub.vd-recording::after { animation: none; }
   .vd-rec.vd-recording svg circle { animation: none; }
   .vd-trigger, .vd-progress > span { transition: none; }
   .vd-progress.vd-indeterminate > span { animation: none; width: 100%; opacity: 0.5; }
@@ -232,6 +251,8 @@ export const OVERLAY_CSS = `
 `;
 
 export const DOWNLOAD_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>`;
+
+export const PLAY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>`;
 
 export const REC_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>`;
 

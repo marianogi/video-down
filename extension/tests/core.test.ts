@@ -423,6 +423,31 @@ describe("diagnostic report", () => {
   });
 });
 
+// ------------------------------------------------------------------ previews (a video inside a link)
+
+describe("previews", () => {
+  const teaser = { src: "blob:https://www.youtube.com/x", previewOf: "https://www.youtube.com/watch?v=dQw4w9WgXcQ&pp=abc" };
+
+  it("a YouTube preview downloads the full video through yt-dlp, never the teaser", () => {
+    const manifest = media({ format: VideoFormat.HLS, url: "https://cdn.example.com/teaser.m3u8" });
+    expect(route(input({ pageUrl: "https://www.youtube.com/results?search_query=x", video: teaser, media: [manifest], nativeAvailable: true }))).toEqual({
+      kind: "native",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      reason: "youtube",
+    });
+  });
+
+  it("any other preview goes to the page it links to", () => {
+    const video = { src: "https://example.com/teaser.mp4", previewOf: "https://example.com/videos/42" };
+    expect(route(input({ video, nativeAvailable: true }))).toEqual({ kind: "native", url: "https://example.com/videos/42", reason: "preview" });
+    expect(route(input({ video }))).toEqual({ kind: "need-native", reason: "preview" });
+  });
+
+  it("DRM still wins", () => {
+    expect(route(input({ video: { ...teaser, drm: "com.widevine.alpha" }, nativeAvailable: true })).kind).toBe("drm");
+  });
+});
+
 // ------------------------------------------------------------------ masters written by Unified Streaming
 
 import { errorDetail } from "../src/core/detection/detection-failure";

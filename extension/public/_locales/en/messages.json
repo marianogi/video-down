@@ -172,5 +172,10 @@
   "recNoPlayer": { "message": "This browser cannot play the recording here, but it keeps recording." },
   "popupRecordings": { "message": "Recordings" },
   "popupOpenRecording": { "message": "Open" },
-  "failParse": { "message": "The playlist was read, but the extension did not understand it. Please send the diagnostic report (link below)." }
+  "failParse": { "message": "The playlist was read, but the extension did not understand it. Please send the diagnostic report (link below)." },
+  "hubLabel": { "message": "video-down: download or record" },
+  "hubLabelRecording": { "message": "video-down: recording" },
+  "hubLabelDownload": { "message": "video-down: download" },
+  "needNativePreview": { "message": "This is a preview: what gets downloaded is the full video of the page it leads to, and that needs the native component." },
+  "recNoAudio": { "message": "The page's audio never started: only the picture is recorded." }
 }

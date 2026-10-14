@@ -1,12 +1,37 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Any player</title>
+<html lang="en"><head><meta charset="utf-8"><title>A live broadcast</title>
 <style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
-</head><body><h1>Any player</h1>
-<!-- Something playing on the page: what it shows is what gets recorded. -->
-<video src="/media/clip-360.mp4" muted loop autoplay playsinline></video>
+</head><body><h1>A live broadcast</h1>
+<!-- A live source with no playlist at all, like a video call or a WebRTC broadcast: a MediaStream
+     (animated canvas + a tone). Its timeline is unbounded, so the record button is offered. -->
+<video muted autoplay playsinline></video>
 <script>
-  const v = document.querySelector("video");
-  v.addEventListener("playing", () => (document.title = "playing"), { once: true });
-  v.play().catch(() => undefined);
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 360;
+  const g = canvas.getContext("2d");
+  let n = 0;
+  (function draw() {
+    g.fillStyle = `hsl(${(n * 3) % 360} 70% 45%)`;
+    g.fillRect(0, 0, 640, 360);
+    g.fillStyle = "#fff";
+    g.font = "64px sans-serif";
+    g.fillText(String(n++), 40, 200);
+    requestAnimationFrame(draw);
+  })();
+  const stream = canvas.captureStream(25);
+  // The sound comes from a (muted, looping) media element, as in a real broadcast.
+  const sound = document.createElement("video");
+  sound.src = "/media/clip-360.mp4";
+  sound.muted = true;
+  sound.loop = true;
+  sound.addEventListener("playing", () => {
+    stream.addTrack(sound.captureStream().getAudioTracks()[0]);
+    const v = document.querySelector("video");
+    v.srcObject = stream;
+    v.addEventListener("playing", () => (document.title = "playing"), { once: true });
+    v.play().catch(() => undefined);
+  }, { once: true });
+  sound.play().catch(() => undefined);
 </script>
 </body></html>

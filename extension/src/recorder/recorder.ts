@@ -58,7 +58,11 @@ function render(): void {
   $("duration").textContent = clock(info.duration);
   $("size").textContent = formatBytes(info.bytes) || "0 B";
 
-  const notices = [errorText(info.error), info.lost > 0 ? t("recLost", String(info.lost)) : ""].filter(Boolean);
+  const notices = [
+    errorText(info.error),
+    info.lost > 0 ? t("recLost", String(info.lost)) : "",
+    info.noAudio ? t("recNoAudio") : "",
+  ].filter(Boolean);
   const notice = $("notice");
   notice.hidden = notices.length === 0;
   notice.textContent = notices.join(" ");

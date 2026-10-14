@@ -7,14 +7,14 @@
  * inside the page's own player markup.
  */
 
-import { OVERLAY_CSS, DOWNLOAD_ICON, LOCK_ICON, REC_ICON } from "./styles";
+import { OVERLAY_CSS, DOWNLOAD_ICON, LOCK_ICON, PLAY_ICON, REC_ICON } from "./styles";
 import { availableProfiles, startCapture, type CaptureHandle } from "../capture";
 import { bytesPerHour, codecLabel, profileById, videoBitrate } from "../../core/recording/profiles";
 import { t, formatBytes, formatEta } from "../../shared/i18n";
 import { route, type Route, type RouteInput, type DirectSource } from "../../core/router";
 import { permalinkNear } from "../permalinks";
 import { bindMedia } from "../../core/binding";
-import { readFacts, pageTitle, DRM_ATTR } from "../video-facts";
+import { readFacts, pageTitle, DRM_ATTR, isLiveElement, previewTarget } from "../video-facts";
 import {
   MessageType,
   type DownloadRequestPayload,
@@ -62,6 +62,17 @@ interface JobView {
 interface Tracked {
   key: string;
   video: HTMLVideoElement;
+  /**
+   * The one icon shown on the video ("play"). Hovering, focusing or pressing it unfolds it into
+   * the two real buttons: download (trigger) and record (recButton).
+   */
+  hub: HTMLButtonElement;
+  hubRing: HTMLSpanElement;
+  expanded: boolean;
+  /** The record button is offered: live broadcasts only (or while a recording runs) */
+  canRecord: boolean;
+  pointerInside: boolean;
+  collapseTimer: ReturnType<typeof setTimeout> | null;
   trigger: HTMLButtonElement;
   /** Second button: record what this video plays */
   recButton: HTMLButtonElement;
@@ -208,7 +219,18 @@ export class Overlay {
       { passive: true, capture: true },
     );
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this.openKey) this.close(true);
+      if (e.key !== "Escape") return;
+      if (this.openKey) {
+        this.close(true);
+        return;
+      }
+      const focused = this.root.activeElement;
+      for (const tr of this.tracked.values()) {
+        if (tr.expanded && (focused === tr.trigger || focused === tr.recButton)) {
+          this.setExpanded(tr, false);
+          tr.hub.focus();
+        }
+      }
     }, true);
     document.addEventListener(
       "pointerdown",
@@ -337,6 +359,20 @@ export class Overlay {
 
   private track(video: HTMLVideoElement): void {
     const key = `v${++this.counter}`;
+    const hub = el("button", {
+      className: "vd-trigger vd-hub",
+      attrs: {
+        type: "button",
+        "aria-label": t("hubLabelDownload"),
+        title: t("hubLabelDownload"),
+        "aria-expanded": "false",
+      },
+    });
+    hub.innerHTML = PLAY_ICON;
+    const hubRing = el("span", { className: "vd-ring", attrs: { "aria-hidden": "true" } });
+    hub.appendChild(hubRing);
+    hub.style.display = "none";
+    this.root.insertBefore(hub, this.popover);
     const trigger = el("button", {
       className: "vd-trigger",
       attrs: {
@@ -382,6 +418,12 @@ export class Overlay {
     const tr: Tracked = {
       key,
       video,
+      hub,
+      hubRing,
+      expanded: false,
+      canRecord: false,
+      pointerInside: false,
+      collapseTimer: null,
       trigger,
       recButton,
       ring,
@@ -391,6 +433,24 @@ export class Overlay {
       visible: false,
       recording: null,
     };
+    // Pressing the icon (touch screens, keyboard) unfolds it too, and moves focus to download.
+    hub.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.setExpanded(tr, !tr.expanded, true);
+    });
+    for (const button of [hub, trigger, recButton]) {
+      button.addEventListener("pointerenter", () => {
+        tr.pointerInside = true;
+        this.setExpanded(tr, true);
+      });
+      button.addEventListener("pointerleave", () => {
+        tr.pointerInside = false;
+        this.scheduleCollapse(tr);
+      });
+      button.addEventListener("blur", () => this.scheduleCollapse(tr));
+    }
+
     const onLoadStart = () => {
       const previous = this.mediaFor(tr);
       tr.loadStartedAt = Date.now();
@@ -415,6 +475,8 @@ export class Overlay {
   private untrack(tr: Tracked): void {
     if (this.openKey === tr.key) this.close(false);
     this.resizeObserver.unobserve(tr.video);
+    if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
+    tr.hub.remove();
     tr.trigger.remove();
     tr.recButton.remove();
     // The element is gone: a capture of it cannot continue (the worker keeps what was recorded).
@@ -426,6 +488,7 @@ export class Overlay {
   private updateDrmState(tr: Tracked): void {
     const drm = tr.video.getAttribute(DRM_ATTR);
     if (drm) {
+      tr.hub.dataset.state = "drm";
       tr.trigger.dataset.state = "drm";
       tr.trigger.innerHTML = LOCK_ICON;
       tr.trigger.appendChild(tr.ring);
@@ -463,20 +526,29 @@ export class Overlay {
         style.display !== "none";
       tr.visible = visible || this.openKey === tr.key;
       if (!tr.visible) {
+        tr.hub.style.display = "none";
         tr.trigger.style.display = "none";
         tr.recButton.style.display = "none";
         continue;
       }
       const left = Math.min(Math.max(r.left, 0) + OFFSET, vw - 82);
       const top = Math.min(Math.max(r.top, 0) + OFFSET, vh - 42);
-      tr.trigger.style.display = "grid";
-      tr.trigger.style.left = `${left}px`;
-      tr.trigger.style.top = `${top}px`;
-      tr.recButton.style.display = "grid";
-      tr.recButton.style.left = `${left + 40}px`;
-      tr.recButton.style.top = `${top}px`;
+      const unfolded = tr.expanded || this.openKey === tr.key;
+      const canRecord = this.canRecord(tr);
+      if (canRecord !== tr.canRecord) {
+        tr.canRecord = canRecord;
+        this.updateRecButton(tr);
+      }
+      tr.hub.style.display = unfolded ? "none" : "grid";
+      tr.trigger.style.display = unfolded ? "grid" : "none";
+      tr.recButton.style.display = unfolded && canRecord ? "grid" : "none";
+      for (const [button, x] of [[tr.hub, left], [tr.trigger, left], [tr.recButton, left + 40]] as const) {
+        button.style.left = `${x}px`;
+        button.style.top = `${top}px`;
+      }
       const hot =
         this.pointer.x >= r.left && this.pointer.x <= r.right && this.pointer.y >= r.top && this.pointer.y <= r.bottom;
+      tr.hub.classList.toggle("vd-hot", hot || tr.jobs.size > 0 || !!tr.recording);
       tr.trigger.classList.toggle("vd-hot", hot || tr.jobs.size > 0);
       tr.recButton.classList.toggle("vd-hot", hot || !!tr.recording);
     }
@@ -501,17 +573,54 @@ export class Overlay {
 
   private updateRing(tr: Tracked): void {
     const active = [...tr.jobs.values()].find((j) => !j.progress || !FINISHED.has(j.progress.stage));
-    if (!active) {
-      tr.ring.style.background = "";
-      return;
+    for (const ring of [tr.ring, tr.hubRing]) {
+      if (!active) {
+        ring.style.background = "";
+        continue;
+      }
+      const p = active.progress?.percentage ?? 0;
+      ring.style.background = `conic-gradient(#60a5fa ${p}%, transparent 0)`;
+      ring.style.setProperty(
+        "-webkit-mask",
+        "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px))",
+      );
+      ring.style.borderRadius = "50%";
     }
-    const p = active.progress?.percentage ?? 0;
-    tr.ring.style.background = `conic-gradient(#60a5fa ${p}%, transparent 0)`;
-    tr.ring.style.setProperty(
-      "-webkit-mask",
-      "radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px))",
-    );
-    tr.ring.style.borderRadius = "50%";
+  }
+
+  // ------------------------------------------------------------ one icon that unfolds into two
+
+  /**
+   * Recording is for live broadcasts: anything else can be downloaded whole. A preview (a video
+   * inside a link) or a DRM video is never offered; a recording in progress always keeps its button.
+   */
+  private canRecord(tr: Tracked): boolean {
+    if (tr.recording) return true;
+    if (tr.video.getAttribute(DRM_ATTR) || previewTarget(tr.video)) return false;
+    return isLiveElement(tr.video) || this.mediaFor(tr).some((m) => m.isLive && !m.hasDrm);
+  }
+
+  private setExpanded(tr: Tracked, on: boolean, focusDownload = false): void {
+    if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
+    tr.collapseTimer = null;
+    if (tr.expanded !== on) {
+      tr.expanded = on;
+      tr.hub.setAttribute("aria-expanded", String(on));
+      this.layout();
+    }
+    if (on && focusDownload) tr.trigger.focus();
+  }
+
+  /** Fold back a moment after the pointer and the focus have left both buttons, unless a menu is open. */
+  private scheduleCollapse(tr: Tracked): void {
+    if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
+    tr.collapseTimer = setTimeout(() => {
+      tr.collapseTimer = null;
+      const focused = this.root.activeElement;
+      const focusInside = focused === tr.hub || focused === tr.trigger || focused === tr.recButton;
+      if (tr.pointerInside || focusInside || this.openKey === tr.key) return;
+      this.setExpanded(tr, false);
+    }, 400);
   }
 
   // ------------------------------------------------------------ menu
@@ -541,6 +650,7 @@ export class Overlay {
       tr.trigger.setAttribute("aria-expanded", "false");
       tr.recButton.setAttribute("aria-expanded", "false");
       if (restoreFocus) (this.menuKind === "record" ? tr.recButton : tr.trigger).focus();
+      else this.scheduleCollapse(tr);
     }
     this.menuKind = "download";
   }
@@ -712,13 +822,15 @@ export class Overlay {
     ]);
   }
 
-  private renderNeedNative(reason: "youtube" | "unknown-stream"): void {
+  private renderNeedNative(reason: "youtube" | "unknown-stream" | "preview"): void {
     const action = el("button", { className: "vd-action", text: t("howToInstall"), attrs: { type: "button" } });
     action.addEventListener("click", () => void send(MessageType.OPEN_OPTIONS, { section: "native" }));
     this.frame(t("menuTitle"), [
       el("div", { className: "vd-notice" }, [
         el("strong", { text: t("needNativeTitle") }),
-        el("span", { text: reason === "youtube" ? t("needNativeYoutube") : t("needNativeStream") }),
+        el("span", {
+          text: reason === "youtube" ? t("needNativeYoutube") : reason === "preview" ? t("needNativePreview") : t("needNativeStream"),
+        }),
       ]),
       action,
     ]);
@@ -938,9 +1050,13 @@ export class Overlay {
   private updateRecButton(tr: Tracked): void {
     const on = !!tr.recording;
     tr.recButton.classList.toggle("vd-recording", on);
+    tr.hub.classList.toggle("vd-recording", on);
     const label = t(on ? "recordingLabel" : "recordLabel");
     tr.recButton.setAttribute("aria-label", label);
     tr.recButton.title = label;
+    const hubLabel = t(on ? "hubLabelRecording" : tr.canRecord ? "hubLabel" : "hubLabelDownload");
+    tr.hub.setAttribute("aria-label", hubLabel);
+    tr.hub.title = hubLabel;
   }
 
   private optionList(options: Array<{ label: string; meta: string; onPick: (b: HTMLButtonElement) => void }>): HTMLUListElement {

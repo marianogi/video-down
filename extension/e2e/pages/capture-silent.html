@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A live broadcast without sound</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>A live broadcast without sound</h1>
+<!-- A live source with no playlist at all, like a video call or a WebRTC broadcast: a MediaStream
+     (animated canvas + a tone). Its timeline is unbounded, so the record button is offered. -->
+<video muted autoplay playsinline></video>
+<script>
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 360;
+  const g = canvas.getContext("2d");
+  let n = 0;
+  (function draw() {
+    g.fillStyle = `hsl(${(n * 3) % 360} 70% 45%)`;
+    g.fillRect(0, 0, 640, 360);
+    g.fillStyle = "#fff";
+    g.font = "64px sans-serif";
+    g.fillText(String(n++), 40, 200);
+    requestAnimationFrame(draw);
+  })();
+  const stream = canvas.captureStream(25);
+  // Its audio comes from an AudioContext the page never resumes (no click): the track exists
+  // but never delivers anything, which stalls MediaRecorder.
+  const audio = new AudioContext();
+  const tone = audio.createOscillator();
+  const out = audio.createMediaStreamDestination();
+  tone.connect(out);
+  tone.start();
+  stream.addTrack(out.stream.getAudioTracks()[0]);
+  const v = document.querySelector("video");
+  v.srcObject = stream;
+  v.addEventListener("playing", () => (document.title = "playing"), { once: true });
+  v.play().catch(() => undefined);
+</script>
+</body></html>

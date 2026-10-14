@@ -30,18 +30,27 @@ Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo de
 
 ## Cómo se usa
 
-1. Abre una página con un vídeo. En su esquina superior izquierda aparece un icono redondo de descarga.
-   Si el vídeo tiene DRM, el icono es un candado.
-2. Pulsa el icono. Se abre un menú con las resoluciones disponibles, con su códec y su tamaño aproximado
-   cuando se conocen.
-3. Pulsa una resolución. La descarga empieza y su progreso se ve en el propio menú, en un anillo alrededor
+1. Abre una página con un vídeo. En su esquina superior izquierda aparece **un solo icono de «play»**.
+2. Pasa el ratón por encima (o púlsalo, en pantallas táctiles y con el teclado): se desdobla en el botón
+   de **descarga** y, si el vídeo es una emisión en directo, el de **grabación**, con un punto rojo. Si el
+   vídeo tiene DRM, el de descarga es un candado.
+3. Pulsa el de descarga. Se abre un menú con las resoluciones disponibles, con su códec y su tamaño
+   aproximado cuando se conocen.
+4. Pulsa una resolución. La descarga empieza y su progreso se ve en el propio menú, en un anillo alrededor
    del icono y en la lista del botón de video-down de la barra de Chrome.
+
+Con el icono plegado se sigue viendo si hay algo en marcha: el anillo de progreso de una descarga y un
+punto rojo si se está grabando. Escape vuelve a plegarlo.
 
 El fichero se guarda en la carpeta de descargas de Chrome. En las opciones se puede pedir que Chrome
 pregunte dónde guardar cada descarga.
 
-Junto al icono de descarga hay un segundo botón con un punto rojo: **grabar** lo que se emite, con
-diferido. Ver [Grabar en directo, con diferido](#grabar-en-directo-con-diferido).
+En las emisiones en directo, el botón con el punto rojo **graba** lo que se emite, con diferido. Ver
+[Grabar en directo, con diferido](#grabar-en-directo-con-diferido).
+
+**Previsualizaciones.** Si el vídeo está dentro de un enlace a otra página, como las miniaturas de YouTube
+que se reproducen al pasar el ratón, es solo un avance de esa página: lo que se descarga es el vídeo
+completo de la página a la que lleva, nunca el avance. Ahí no se ofrece grabar.
 
 Si un vídeo no sale como esperabas (faltan calidades, no se encuentra…), el enlace «Informe de
 diagnóstico» al pie del menú cuenta qué ha visto la extensión en esa pestaña. Ver el
@@ -74,6 +83,7 @@ la extensión nunca se bloquea: usa el navegador si puede, o explica qué falta.
 | 7 | La descarga en el navegador **falla** (token del CDN, cabeceras raras…) | Componente nativo, a petición tuya | En el mensaje de error aparece «Probar con el componente nativo». | Las que encuentre yt-dlp. | Componente nativo |
 | 8 | Vídeo con **DRM** (Widevine, PlayReady, FairPlay, ClearKey) | Ninguna | Se muestra el aviso y no se ofrece descarga. | — | — |
 | 9 | Emisión **en directo** | Grabación (botón rojo) | No se descarga: se graba, con copia exacta o captura del reproductor, y se puede ver en diferido. | Las calidades de la emisión, o el perfil de captura que elijas. | Ninguno |
+| 9b | **Previsualización**: un vídeo dentro de un enlace a otra página (miniaturas que se reproducen al pasar el ratón) | Componente nativo | yt-dlp descarga el vídeo completo de la página a la que lleva el enlace, nunca el avance. | Las del vídeo completo. | Componente nativo |
 | 10 | Vídeo que todavía no ha empezado a cargar | Espera | El menú dice «Esperando a que el vídeo empiece a cargar» y se actualiza solo. | — | — |
 | 11 | Lista detectada que no se puede leer (página de error, formato propio cifrado, o un enlace que caducó sin que el reproductor llegara a leerlo) | Ninguna, con diagnóstico | El menú explica el motivo exacto y ofrece «Reintentar»; si procede, también probar con yt-dlp. Un enlace de un solo uso que el reproductor sí leyó ya no llega aquí: se usa su copia (caso 2). | — | — |
 
@@ -281,8 +291,10 @@ sale del equipo salvo que lo copies tú.
 
 ## Grabar en directo, con diferido
 
-El segundo botón de cada vídeo, con un punto rojo, graba lo que se emite. Sirve para directos y también
-para cualquier vídeo que se esté reproduciendo. Su menú ofrece dos formas de grabar:
+En una emisión en directo, el icono de cada vídeo se desdobla también en un botón con un punto rojo, que
+graba lo que se emite. Solo aparece en directos: lo demás se descarga entero. Cuenta como directo un vídeo
+con duración infinita (los reproductores se la dan a las emisiones y a los flujos en tiempo real, como
+WebRTC) o con una lista HLS o DASH en directo. Su menú ofrece dos formas de grabar:
 
 ### Copia exacta del directo
 
@@ -300,7 +312,7 @@ para cualquier vídeo que se esté reproduciendo. Su menú ofrece dos formas de 
 
 ### Captura del reproductor
 
-- **Cuándo.** Con cualquier reproductor, también los de protocolo propio (YouTube, redes sociales…),
+- **Cuándo.** Con cualquier directo, también los de protocolo propio (YouTube, redes sociales, WebRTC…),
   siempre que no tenga DRM.
 - **Qué hace.** Graba lo que muestra el `<video>` con `captureStream()` y `MediaRecorder`, recodificando
   en tiempo real con el perfil que elijas:
@@ -654,9 +666,9 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 59) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, masters con la pista de audio declarada sin dirección (Unified Streaming), búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido y perfiles de captura | `pnpm test` |
+| Unitarias de la extensión (Vitest, 63) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, masters con la pista de audio declarada sin dirección (Unified Streaming), búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido, perfiles de captura y previsualizaciones | `pnpm test` |
 | Unitarias del componente nativo (Deno, 16) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) y formato del fichero de cookies | `deno task test` |
-| Extremo a extremo (Playwright, 28 + 5 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS con la pista de audio declarada sin dirección (Unified Streaming), HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, grabación de un directo HLS simulado (copia exacta, diferido y MP4), captura del reproductor con los cuatro perfiles (diferido y MP4), DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Extremo a extremo (Playwright, 30 + 5 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS con la pista de audio declarada sin dirección (Unified Streaming), HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, grabación de un directo HLS simulado (copia exacta, diferido y MP4), captura del reproductor con los cuatro perfiles (diferido y MP4) sobre un directo sin lista (MediaStream), captura de un directo cuyo audio no arranca (solo imagen), previsualización dentro de un enlace (vídeo completo de la página enlazada), el icono que se desdobla con el ratón y con el teclado, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador, **comparación de calidades con yt-dlp** como segunda opinión y **muro de una web con sesión**: enlace propio de la publicación, sesión prestada para consultar y para descargar (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:

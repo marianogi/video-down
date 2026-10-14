@@ -17,7 +17,7 @@ function fromBase64(data: string): Uint8Array {
 }
 
 export class CaptureReceiver {
-  private readonly splitter = new Mp4FragmentSplitter();
+  private splitter = new Mp4FragmentSplitter();
   private seq = 0;
   private hasInit = false;
   private queue: Promise<void> = Promise.resolve();
@@ -38,6 +38,18 @@ export class CaptureReceiver {
         this.hasInit = true;
       }
       for (const f of out.fragments) await this.store(f.bytes, f.duration);
+    });
+    return this.queue;
+  }
+
+  /**
+   * The page restarted its recorder (its audio never started): forget the header the stalled
+   * one may have written. Nothing else was recorded, so the next header simply replaces it.
+   */
+  reset(): Promise<void> {
+    this.queue = this.queue.then(() => {
+      this.splitter = new Mp4FragmentSplitter();
+      this.hasInit = false;
     });
     return this.queue;
   }

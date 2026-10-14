@@ -28,6 +28,8 @@ export interface VideoFacts {
   duration?: number;
   /** ms since the element started loading */
   loadingForMs: number;
+  /** The page this video is only a preview of (a video inside a link to another page) */
+  previewOf?: string;
 }
 
 export type Route =
@@ -35,8 +37,8 @@ export type Route =
   | { kind: "live" }
   | { kind: "direct"; sources: DirectSource[] }
   | { kind: "manifest"; media: VideoMetadata }
-  | { kind: "native"; url: string; referer?: string; reason: "youtube" | "unknown-stream" }
-  | { kind: "need-native"; reason: "youtube" | "unknown-stream" }
+  | { kind: "native"; url: string; referer?: string; reason: "youtube" | "unknown-stream" | "preview" }
+  | { kind: "need-native"; reason: "youtube" | "unknown-stream" | "preview" }
   | { kind: "pending" };
 
 export interface RouteInput {
@@ -112,6 +114,16 @@ export function route(input: RouteInput): Route {
 
   // 1. The element itself is using EME: protected, whatever else we know.
   if (video.drm) return { kind: "drm", system: video.drm };
+
+  // 1b. A preview (a video inside a link to another page): the full video is on that page, never
+  //     the teaser playing here, whose manifests and files are not the video's.
+  if (video.previewOf) {
+    const yt = youtubeWatchUrl(video.previewOf);
+    if (yt) return nativeAvailable ? { kind: "native", url: yt, reason: "youtube" } : { kind: "need-native", reason: "youtube" };
+    return nativeAvailable
+      ? { kind: "native", url: video.previewOf, reason: "preview" }
+      : { kind: "need-native", reason: "preview" };
+  }
 
   // 2. YouTube only works through yt-dlp (the web player is SABR-only since 2025).
   const yt = youtubeWatchUrl(pageUrl);

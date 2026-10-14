@@ -30,6 +30,8 @@ export interface RecordingInfo {
   duration: number;
   /** HLS CODECS of what was recorded, when the player must be told (capture) */
   codecs?: string;
+  /** The page's audio never started: the capture records the picture only */
+  noAudio?: boolean;
   savedAt?: number;
   error?: string;
 }
