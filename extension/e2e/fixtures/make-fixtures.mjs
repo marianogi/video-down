@@ -46,6 +46,20 @@ writeFileSync(join(out, "hls", "master.m3u8"), [
   "",
 ].join("\n"));
 
+// 2a. The same master, written the way Unified Streaming does: the audio rendition is declared
+//     WITHOUT a URI (RFC 8216 allows it: the audio is muxed in every variant). Media Bridge's
+//     parser crashed on it and only the playing variant was offered (0.2.0, Hotmart courses).
+writeFileSync(join(out, "hls", "master-muxed-audio.m3u8"), [
+  "#EXTM3U",
+  "#EXT-X-VERSION:4",
+  '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-aacl-96",LANGUAGE="en",NAME="English",AUTOSELECT=YES,DEFAULT=YES,CHANNELS="2"',
+  '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS="mp4a.40.2,avc1.64001e",AUDIO="audio-aacl-96"',
+  "v360/index.m3u8",
+  '#EXT-X-STREAM-INF:BANDWIDTH=2200000,RESOLUTION=1280x720,CODECS="mp4a.40.2,avc1.64001f",AUDIO="audio-aacl-96"',
+  "v720/index.m3u8",
+  "",
+].join(String.fromCharCode(10)));
+
 // 2b. Same stream with Unified Streaming Origin names: the master is <name>.m3u8 and each variant
 //     <name>-audio_eng=…-video_eng=….m3u8 next to it. The e2e server only serves these playlists
 //     with ?token=abc, like a CDN with signed URLs.
@@ -169,7 +183,7 @@ ${join(dir, "enc.key")}
   writeFileSync(join(out, "dash", "widevine.mpd"), mpd);
 }
 
-for (const f of ["clip-360.mp4", "hls/master.m3u8", "live/seg014.ts", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
+for (const f of ["clip-360.mp4", "hls/master.m3u8", "hls/master-muxed-audio.m3u8", "live/seg014.ts", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
   "hls-aes-zeroiv/index.m3u8", "hls-byterange/index.m3u8", "hls-garbage/index.m3u8", "dash/manifest.mpd", "dash/widevine.mpd"]) {
   if (!existsSync(join(out, f))) throw new Error(`missing ${f}`);
 }

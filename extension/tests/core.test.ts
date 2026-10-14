@@ -423,6 +423,35 @@ describe("diagnostic report", () => {
   });
 });
 
+// ------------------------------------------------------------------ masters written by Unified Streaming
+
+import { errorDetail } from "../src/core/detection/detection-failure";
+
+describe("master with an audio rendition without URI (audio muxed in the variants)", () => {
+  const master = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:4",
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-aacl-128",LANGUAGE="en",NAME="English",AUTOSELECT=YES,DEFAULT=YES,CHANNELS="2"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=2924000,CODECS="mp4a.40.2,avc1.640028",RESOLUTION=1920x1080,AUDIO="audio-aacl-128"',
+    "x-audio_eng=128005-video_eng=2781000.m3u8",
+    '#EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="mp4a.40.2,avc1.64001f",RESOLUTION=1280x720,AUDIO="audio-aacl-128"',
+    "x-audio_eng=128005-video_eng=900000.m3u8",
+  ].join(String.fromCharCode(10));
+
+  it("lists every quality and downloads no separate audio", () => {
+    const variants = hlsVariants(master, "https://cdn.example.com/hls/master.m3u8");
+    expect(variants.map((v) => v.label)).toEqual(["1080p", "720p"]);
+    expect(variants[0]!.manifestQuality).toEqual({
+      videoPlaylistUrl: "https://cdn.example.com/hls/x-audio_eng=128005-video_eng=2781000.m3u8",
+      audioPlaylistUrl: null,
+    });
+  });
+
+  it("reports what went wrong without the addresses", () => {
+    expect(errorDetail(new TypeError("bad https://cdn.example.com/a.m3u8?token=x here"))).toBe("TypeError: bad … here");
+  });
+});
+
 // ------------------------------------------------------------------ site session for yt-dlp
 
 import { needsSession, toSessionCookie } from "../src/core/native/site-session";

@@ -39,7 +39,7 @@ import { logger } from "../../utils/logger";
 import { extractThumbnail } from "../thumbnail-utils";
 import { detectHlsDrm, canDecrypt } from "../../utils/drm-utils";
 import { DEFAULT_DETECTION_CACHE_SIZE, DEFAULT_MASTER_PLAYLIST_CACHE_SIZE } from "../../../shared/constants";
-import { type DetectionFailure, describeBody, redactUrl, statusFromError } from "../detection-failure";
+import { type DetectionFailure, describeBody, errorDetail, redactUrl, statusFromError } from "../detection-failure";
 
 /** Configuration options for HlsDetectionHandler */
 export interface HlsDetectionHandlerOptions {
@@ -141,8 +141,25 @@ export class HlsDetectionHandler {
     }
     this.seenPathKeys.add(pathKey);
 
+    let playlistText: string;
     try {
-      const playlistText = await this.fetchPlaylistText(url);
+      playlistText = await this.fetchPlaylistText(url);
+    } catch (error) {
+      this.seenPathKeys.delete(pathKey);
+      const status = statusFromError(error);
+      logger.debug(`[video-down] Could not read HLS playlist ${redactUrl(url)}: ${status ?? String(error)}`);
+      this.onDetectionFailed?.({
+        url,
+        format: VideoFormat.HLS,
+        reason: status ? "http" : "network",
+        ...(status ? { status } : {}),
+        at: Date.now(),
+      });
+      return null;
+    }
+
+    // Read fine but not understood: reported as such (it used to look like a network error).
+    try {
       const normalizedUrl = normalizeUrl(url);
       const isMaster = isMasterPlaylist(playlistText);
       const isMedia = isMediaPlaylist(playlistText);
@@ -168,15 +185,9 @@ export class HlsDetectionHandler {
       return null;
     } catch (error) {
       this.seenPathKeys.delete(pathKey);
-      const status = statusFromError(error);
-      logger.debug(`[video-down] Could not read HLS playlist ${redactUrl(url)}: ${status ?? String(error)}`);
-      this.onDetectionFailed?.({
-        url,
-        format: VideoFormat.HLS,
-        reason: status ? "http" : "network",
-        ...(status ? { status } : {}),
-        at: Date.now(),
-      });
+      const detail = errorDetail(error);
+      logger.debug(`[video-down] Could not understand HLS playlist ${redactUrl(url)}: ${detail}`);
+      this.onDetectionFailed?.({ url, format: VideoFormat.HLS, reason: "parse", detail, at: Date.now() });
       return null;
     }
   }

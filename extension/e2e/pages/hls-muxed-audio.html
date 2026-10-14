@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>HLS master with muxed audio declared</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>HLS master with muxed audio declared</h1>
+<!-- Unified Streaming style: the audio rendition is declared without URI (it is inside every variant). -->
+<video controls muted></video>
+<script type="module">import { msePlayer } from "./player.js"; msePlayer("/media/hls/master-muxed-audio.m3u8");</script>
+</body></html>

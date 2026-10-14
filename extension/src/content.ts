@@ -75,7 +75,12 @@ async function main(): Promise<void> {
 
   function onFailed(failure: DetectionFailure): void {
     failures.set(pathKey(failure.url), failure);
-    const why = failure.reason === "http" ? `HTTP ${failure.status ?? "?"}` : (failure.body ?? failure.reason);
+    const why =
+      failure.reason === "http"
+        ? `HTTP ${failure.status ?? "?"}`
+        : failure.reason === "parse"
+          ? `not understood: ${failure.detail ?? "?"}`
+          : (failure.body ?? failure.reason);
     diag("failed", failure.url, why);
     overlay?.onMediaChanged();
   }

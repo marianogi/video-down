@@ -171,5 +171,6 @@
   "recUnknown": { "message": "This recording no longer exists." },
   "recNoPlayer": { "message": "This browser cannot play the recording here, but it keeps recording." },
   "popupRecordings": { "message": "Recordings" },
-  "popupOpenRecording": { "message": "Open" }
+  "popupOpenRecording": { "message": "Open" },
+  "failParse": { "message": "The playlist was read, but the extension did not understand it. Please send the diagnostic report (link below)." }
 }

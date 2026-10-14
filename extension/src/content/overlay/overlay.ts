@@ -649,6 +649,7 @@ export class Overlay {
   private failureReason(failure: DetectionFailure): string {
     if (failure.reason === "http") return t("failHttp", String(failure.status ?? "?"));
     if (failure.reason === "network") return t("failNetwork");
+    if (failure.reason === "parse") return t("failParse");
     if (failure.body === "binary") return t("failOpaque");
     if (failure.body === "html") return t("failHtml");
     if (failure.body === "json") return t("failJson");

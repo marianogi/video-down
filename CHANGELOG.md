@@ -7,6 +7,19 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.1 (2026-10-14)
+
+- **Masters de Unified Streaming: salen todas las calidades.** Esas listas declaran la pista de audio
+  sin dirección propia (`#EXT-X-MEDIA:TYPE=AUDIO` sin `URI`), algo que permite el estándar (RFC 8216):
+  el audio va dentro de cada calidad. El analizador heredado de Media Bridge intentaba resolver esa
+  dirección inexistente, fallaba al leer la master entera y solo quedaba la calidad que sonaba. Era la
+  causa de que los cursos con el reproductor de Hotmart ofrecieran una sola calidad. Encontrado gracias
+  al informe de diagnóstico que mandó el usuario.
+- **El diagnóstico distingue «no se pudo descargar» de «se descargó pero no se entendió»**, con el
+  error (sin direcciones). Antes, un fallo al interpretar una lista aparecía como fallo de red.
+- Pruebas: una unitaria con una master así y una de extremo a extremo que reproduce el caso (falla con
+  la 0.2.0).
+
 ## 0.2.0 (2026-10-14)
 
 **Grabar en directo, con diferido.** Un segundo botón, con un punto rojo, en cada vídeo:

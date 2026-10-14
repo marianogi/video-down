@@ -148,6 +148,14 @@ test("2 · HLS master: one entry per variant, merged with ffmpeg.wasm", async ({
   await downloadAndCheck(page, downloads, /720p/, { height: 720 });
 });
 
+test("2a · HLS master whose audio rendition has no URI (Unified Streaming): every quality listed", async ({ page, baseUrl, downloads }) => {
+  await page.goto(`${baseUrl}/hls-muxed-audio.html`);
+  await trigger(page).click();
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
+  await downloadAndCheck(page, downloads, /360p/, { height: 360 });
+});
+
 test("2b · HLS served without .m3u8 extension is recognised by Content-Type", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/hls-noext.html`);
   await trigger(page).click();

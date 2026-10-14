@@ -103,10 +103,12 @@ export function parseMasterPlaylist(
     width: playlist.attributes.RESOLUTION?.width,
   }));
 
-  // Parse audio playlists
+  // Parse audio playlists. An EXT-X-MEDIA without URI is legal (RFC 8216 §4.3.4.1): that audio
+  // is muxed inside every variant (Unified Streaming writes it so), so it is not a separate
+  // playlist to download. Media Bridge resolved the missing URI and crashed on the whole master.
   const audioLevels: Level[] = Object.entries(audioPlaylists).flatMap(
     ([key, entries]) => {
-      return Object.entries(entries).map(([label, entry]: [string, any]) => {
+      return Object.entries(entries).filter(([, entry]: [string, any]) => typeof entry?.uri === "string" && entry.uri.length > 0).map(([label, entry]: [string, any]) => {
         return {
           type: "audio" as LevelType,
           id: `${label}-${key}`,

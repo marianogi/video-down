@@ -171,5 +171,6 @@
   "recUnknown": { "message": "Esta grabación ya no existe." },
   "recNoPlayer": { "message": "Este navegador no puede reproducir la grabación aquí, pero se sigue grabando." },
   "popupRecordings": { "message": "Grabaciones" },
-  "popupOpenRecording": { "message": "Abrir" }
+  "popupOpenRecording": { "message": "Abrir" },
+  "failParse": { "message": "La lista se ha leído, pero la extensión no la ha entendido. Envía el informe de diagnóstico (enlace de abajo)." }
 }

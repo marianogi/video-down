@@ -6,7 +6,8 @@
 
 import type { VideoFormat } from "../types";
 
-export type FailureReason = "http" | "not-playlist" | "network";
+/** "parse": read fine, but the extension did not understand it (a bug or an unusual playlist). */
+export type FailureReason = "http" | "not-playlist" | "network" | "parse";
 export type BodyKind = "html" | "json" | "xml" | "binary" | "text" | "empty";
 
 export interface DetectionFailure {
@@ -16,7 +17,15 @@ export interface DetectionFailure {
   reason: FailureReason;
   status?: number;
   body?: BodyKind;
+  /** For "parse": the error, without addresses */
+  detail?: string;
   at: number;
+}
+
+/** Short error message without URLs (they can carry tokens). */
+export function errorDetail(error: unknown): string {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return message.replace(/https?:\/\/\S+/g, "…").slice(0, 160);
 }
 
 export function statusFromError(err: unknown): number | undefined {
