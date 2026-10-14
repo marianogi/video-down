@@ -691,15 +691,19 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.2, 14/10/2026)
+### Estado de verificación (versión 0.2.3, 15/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.1; extensión y componente nativo en 0.2.2 | Correcto |
-| Windows 11 | Las 35 pruebas de extremo a extremo, incluidas YouTube, el icono que se desdobla (ratón quieto incluido) y la previsualización dentro de un enlace | 35 de 35 |
-| Windows 11 | Estructura real de una previsualización de YouTube al pasar el ratón: un `<video>` dentro de su enlace `/watch?v=…` | Base de la regla |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 34 de 34 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 34 de 34 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.2; extensión y componente nativo en 0.2.3 | Correcto |
+| Windows 11 | Las 36 pruebas de extremo a extremo, incluida YouTube guardada en la carpeta que decide Chrome | 36 de 36 |
+| Windows 11 | yt-dlp con y sin `--encoding utf-8`: «¡Hola ñandú! «prueba» 日本» llega estropeado sin la opción y bien con ella | Causa y arreglo |
+| Windows 11 | Componente nativo nuevo con yt-dlp real: título con «¡», «ñ» y «» en la ruta devuelta, y guardado en la carpeta y con el nombre elegidos | 8 de 8 |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 35 de 35 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 35 de 35 (YouTube no se ejecuta en GitHub) |
+
+El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas: se ha comprobado
+la ruta que Chrome decide sin diálogo, no el diálogo en sí.
 
 La verificación en macOS encontró que el icono podía parpadear con el ratón quieto: corregido antes de
 publicar.
