@@ -177,5 +177,6 @@
   "hubLabelRecording": { "message": "video-down: grabando" },
   "hubLabelDownload": { "message": "video-down: descargar" },
   "needNativePreview": { "message": "Esto es una previsualización: lo que se descarga es el vídeo completo de la página a la que lleva, y para eso hace falta el componente nativo." },
-  "recNoAudio": { "message": "El audio de la página no llegaba: se graba solo la imagen." }
+  "recNoAudio": { "message": "El audio de la página no llegaba: se graba solo la imagen." },
+  "openVideoFirst": { "message": "No encuentro a qué vídeo pertenece esta previsualización. Ábrelo (pulsa en él) y usa el icono del vídeo abierto." }
 }

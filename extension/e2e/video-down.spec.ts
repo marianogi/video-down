@@ -406,7 +406,42 @@ test("12b · one preview player shared by thumbnails: the menu stays put, open a
   }
 });
 
-// ---------------------------------------------------------------- recording// ---------------------------------------------------------------- recording
+test("12c · a video covered by another layer gets no icon", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/covered.html`);
+  await expect(hub(page)).toHaveCount(1, { timeout: 10_000 });
+  const v = (await page.locator("#seen").boundingBox())!;
+  const h = (await hub(page).boundingBox())!;
+  expect(Math.abs(h.y - (v.y + 8))).toBeLessThan(5);
+});
+
+test("12d · opening a video over the grid: one icon, on the opened video (the old preview stays hidden under it)", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/shared-preview.html`);
+  const a = (await page.locator("#a").boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await expect(hub(page)).toHaveCount(1, { timeout: 10_000 });
+  await page.mouse.click(a.x + a.width / 2, a.y + a.height / 2);
+  await expect(page.locator("#main")).toBeVisible();
+  await page.waitForTimeout(1500);
+  await expect(hub(page)).toHaveCount(1);
+  const m = (await page.locator("#main").boundingBox())!;
+  const h = (await hub(page).boundingBox())!;
+  expect(Math.abs(h.x - (m.x + 8))).toBeLessThan(5);
+  expect(Math.abs(h.y - (m.y + 8))).toBeLessThan(5);
+});
+
+test("12e · a preview laid over its thumbnail (not inside the link): the full video of the linked page", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/preview-over.html`);
+  await openDownload(page);
+  await expect(recButton(page)).toBeHidden();
+  if (process.env.VD_E2E_NATIVE === "1") {
+    await expect(menu(page).getByText("Page A")).toBeVisible({ timeout: 60_000 });
+  } else {
+    await expect(menu(page).getByText(/This is a preview|native component is needed/i).first()).toBeVisible({ timeout: 30_000 });
+  }
+  await expect(menu(page).getByRole("button", { name: /Original file|360p/ })).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------- recording
 
 /** The recorder page: wait for something recorded, stop, save, and check the file with ffprobe. */
 async function recordAndSave(recorder: Page, downloads: string, seconds: number) {

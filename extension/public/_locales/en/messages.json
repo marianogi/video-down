@@ -177,5 +177,6 @@
   "hubLabelRecording": { "message": "video-down: recording" },
   "hubLabelDownload": { "message": "video-down: download" },
   "needNativePreview": { "message": "This is a preview: what gets downloaded is the full video of the page it leads to, and that needs the native component." },
-  "recNoAudio": { "message": "The page's audio never started: only the picture is recorded." }
+  "recNoAudio": { "message": "The page's audio never started: only the picture is recorded." },
+  "openVideoFirst": { "message": "I cannot tell which video this preview belongs to. Open it (click it) and use the icon on the opened video." }
 }

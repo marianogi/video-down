@@ -7,6 +7,23 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.4 (2026-10-15)
+
+- **Sin iconos duplicados ni descolocados al abrir un vídeo desde su previsualización.** YouTube no
+  retira su reproductor de previsualizaciones al abrir el vídeo: lo deja debajo de la página nueva, y
+  la extensión le seguía dibujando un icono en su antiguo sitio. Ahora un vídeo tapado por otra cosa de
+  la página, o transparente, no tiene icono: se mira qué hay de verdad en pantalla en el centro y en
+  dos esquinas del vídeo (los controles del propio reproductor cuentan como parte del vídeo).
+- **Previsualizaciones que no están dentro de su enlace.** Además del enlace que envuelve al vídeo, se
+  reconoce el enlace que ocupa su mismo recuadro, por encima o por debajo: la miniatura enlazada sobre
+  la que se reproduce la previsualización, como hace YouTube en algunas páginas. Antes esas
+  previsualizaciones se quedaban en «Esperando a que el vídeo empiece a cargar… dale al play».
+- Si aun así en una página de YouTube que no es la de un vídeo no se sabe a qué vídeo lleva, el menú
+  dice que se abra el vídeo y se use su icono, en lugar de pedir que se le dé al play.
+- Pruebas: 65 unitarias; de extremo a extremo, un vídeo tapado, una web de una sola página que abre el
+  vídeo encima de la previsualización y una previsualización colocada sobre su miniatura (las tres
+  fallan con la 0.2.3).
+
 ## 0.2.3 (2026-10-15)
 
 - **Caracteres especiales en lo que descarga yt-dlp.** En Windows, yt-dlp escribía su salida en la

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Preview laid over its thumbnail</title>
+<style>
+  body { margin: 40px; font-family: sans-serif; }
+  .card { position: relative; width: 480px; height: 270px; }
+  .thumb { position: absolute; inset: 0; display: block; background: #334155; }
+  .card video { position: absolute; inset: 0; width: 480px; height: 270px; pointer-events: none; }
+</style>
+</head><body><h1>Preview laid over its thumbnail</h1>
+<!-- The preview player is not inside the link: it sits over the thumbnail, which is the link to the full video. -->
+<div class="card"><a class="thumb" href="/page-a.html"></a><video src="/media/clip-360.mp4" muted loop autoplay playsinline></video></div>
+</body></html>

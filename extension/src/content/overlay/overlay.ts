@@ -14,7 +14,7 @@ import { t, formatBytes, formatEta } from "../../shared/i18n";
 import { route, type Route, type RouteInput, type DirectSource } from "../../core/router";
 import { permalinkNear } from "../permalinks";
 import { bindMedia } from "../../core/binding";
-import { readFacts, pageTitle, DRM_ATTR, isLiveElement, previewTarget } from "../video-facts";
+import { readFacts, pageTitle, DRM_ATTR, isLiveElement, isOutOfSight, previewTarget } from "../video-facts";
 import {
   MessageType,
   type DownloadRequestPayload,
@@ -71,6 +71,12 @@ interface Tracked {
   expanded: boolean;
   /** The record button is offered: live broadcasts only (or while a recording runs) */
   canRecord: boolean;
+  /** Covered or transparent (see isOutOfSight), checked at most every SIGHT_MS */
+  outOfSight: boolean;
+  sightCheckedAt: number;
+  /** The page this video previews (see previewTarget), checked at most every SIGHT_MS */
+  previewOf: string | undefined;
+  previewCheckedAt: number;
   pointerInside: boolean;
   collapseTimer: ReturnType<typeof setTimeout> | null;
   trigger: HTMLButtonElement;
@@ -100,6 +106,8 @@ type Choice =
   | { kind: "native"; label: string; meta: string; payload: NativeDownloadPayload };
 
 const MIN_VIDEO_HEIGHT = 60;
+/** How often what covers a video, and what it previews, is looked at again (ms). */
+const SIGHT_MS = 300;
 /** Pixels around the icon that still count as over it (a pointer resting on its edge). */
 const HOVER_MARGIN = 4;
 const OFFSET = 8;
@@ -438,6 +446,10 @@ export class Overlay {
       hubRing,
       expanded: false,
       canRecord: false,
+      outOfSight: false,
+      sightCheckedAt: 0,
+      previewOf: undefined,
+      previewCheckedAt: 0,
       pointerInside: false,
       collapseTimer: null,
       trigger,
@@ -534,7 +546,8 @@ export class Overlay {
         r.top < vh &&
         r.left < vw &&
         style.visibility !== "hidden" &&
-        style.display !== "none";
+        style.display !== "none" &&
+        !this.outOfSight(tr);
       tr.visible = visible || this.openKey === tr.key;
       if (!tr.visible) {
         tr.hub.style.display = "none";
@@ -626,13 +639,31 @@ export class Overlay {
 
   // ------------------------------------------------------------ one icon that unfolds into two
 
+  private outOfSight(tr: Tracked): boolean {
+    const now = Date.now();
+    if (now - tr.sightCheckedAt >= SIGHT_MS) {
+      tr.sightCheckedAt = now;
+      tr.outOfSight = isOutOfSight(tr.video, this.host);
+    }
+    return tr.outOfSight;
+  }
+
+  private previewOf(tr: Tracked): string | undefined {
+    const now = Date.now();
+    if (now - tr.previewCheckedAt >= SIGHT_MS) {
+      tr.previewCheckedAt = now;
+      tr.previewOf = previewTarget(tr.video, this.host);
+    }
+    return tr.previewOf;
+  }
+
   /**
    * Recording is for live broadcasts: anything else can be downloaded whole. A preview (a video
    * inside a link) or a DRM video is never offered; a recording in progress always keeps its button.
    */
   private canRecord(tr: Tracked): boolean {
     if (tr.recording) return true;
-    if (tr.video.getAttribute(DRM_ATTR) || previewTarget(tr.video)) return false;
+    if (tr.video.getAttribute(DRM_ATTR) || this.previewOf(tr)) return false;
     return isLiveElement(tr.video) || this.mediaFor(tr).some((m) => m.isLive && !m.hasDrm);
   }
 
@@ -676,7 +707,7 @@ export class Overlay {
       buttonLeft: trigger.left + window.scrollX,
       buttonTop: trigger.top + window.scrollY,
     };
-    this.openPreviewOf = previewTarget(tr.video);
+    this.openPreviewOf = previewTarget(tr.video, this.host);
     (kind === "record" ? tr.recButton : tr.trigger).setAttribute("aria-expanded", "true");
     this.popover.hidden = false;
     this.scheduleLayout();
@@ -786,7 +817,7 @@ export class Overlay {
 
     switch (r.kind) {
       case "pending":
-        this.renderLoading(t("waitingForVideo"));
+        this.renderLoading(t(r.reason === "open-video" ? "openVideoFirst" : "waitingForVideo"));
         this.pendingRetry = setTimeout(() => {
           if (this.openKey === tr.key) void this.renderRoute(tr);
         }, 1000);

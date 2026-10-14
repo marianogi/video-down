@@ -22,5 +22,19 @@
     });
   }
   window.removePreview = () => v.remove();
+
+  // Opening a video, the single-page way: the watch page is laid over the grid, and the preview
+  // player stays where it was, under it.
+  for (const id of ["a", "b"]) {
+    document.getElementById(id).addEventListener("click", (e) => {
+      e.preventDefault();
+      history.pushState({}, "", `?watch=${id}`);
+      const watch = document.createElement("div");
+      watch.id = "watch";
+      watch.style.cssText = "position:fixed;inset:0;background:#fff;z-index:10;padding:40px";
+      watch.innerHTML = '<video id="main" src="/media/clip-720.mp4" muted autoplay playsinline style="width:800px;height:450px;display:block;background:#000"></video>';
+      document.body.appendChild(watch);
+    });
+  }
 </script>
 </body></html>

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>One video covered by another layer</title>
+<style>
+  body { margin: 40px; font-family: sans-serif; }
+  video { width: 480px; height: 270px; display: block; margin-bottom: 20px; background: #000; }
+  #cover { position: absolute; left: 30px; top: 380px; width: 520px; height: 310px; background: #f1f5f9; z-index: 5; }
+</style>
+</head><body><h1>One video covered by another layer</h1>
+<video id="seen" src="/media/clip-360.mp4" muted loop autoplay playsinline></video>
+<video id="hidden" src="/media/clip-360.mp4" muted loop autoplay playsinline></video>
+<!-- Something of the page laid over the second player, as a single-page site keeps an old player under a new page. -->
+<div id="cover"></div>
+<script>
+  const r = document.getElementById("hidden").getBoundingClientRect();
+  Object.assign(document.getElementById("cover").style, { left: `${r.left + scrollX - 10}px`, top: `${r.top + scrollY - 10}px` });
+</script>
+</body></html>

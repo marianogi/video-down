@@ -457,6 +457,13 @@ describe("previews", () => {
     expect(route(input({ video }))).toEqual({ kind: "need-native", reason: "preview" });
   });
 
+  it("a YouTube page that is not a video, without a known preview link: asks to open the video", () => {
+    expect(route(input({ pageUrl: "https://www.youtube.com/", video: { src: "blob:https://www.youtube.com/x" }, nativeAvailable: true }))).toEqual({
+      kind: "pending",
+      reason: "open-video",
+    });
+  });
+
   it("DRM still wins", () => {
     expect(route(input({ video: { ...teaser, drm: "com.widevine.alpha" }, nativeAvailable: true })).kind).toBe("drm");
   });

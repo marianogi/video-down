@@ -39,7 +39,7 @@ export type Route =
   | { kind: "manifest"; media: VideoMetadata }
   | { kind: "native"; url: string; referer?: string; reason: "youtube" | "unknown-stream" | "preview" }
   | { kind: "need-native"; reason: "youtube" | "unknown-stream" | "preview" }
-  | { kind: "pending" };
+  | { kind: "pending"; reason?: "open-video" };
 
 export interface RouteInput {
   pageUrl: string;
@@ -128,7 +128,8 @@ export function route(input: RouteInput): Route {
   // 2. YouTube only works through yt-dlp (the web player is SABR-only since 2025).
   const yt = youtubeWatchUrl(pageUrl);
   if (yt || isYoutubeHost(pageUrl)) {
-    if (!yt) return { kind: "pending" };
+    // A YouTube page that is not a video (home, search…) and a player whose video is unknown.
+    if (!yt) return { kind: "pending", reason: "open-video" };
     return nativeAvailable
       ? { kind: "native", url: yt, reason: "youtube" }
       : { kind: "need-native", reason: "youtube" };
