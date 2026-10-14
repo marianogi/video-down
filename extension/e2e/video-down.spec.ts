@@ -548,7 +548,7 @@ test("keyboard: the icon unfolds with Enter, Escape closes the menu and then fol
 
 // ---------------------------------------------------------------- online (opt-in)
 
-test("4 · YouTube through the native component (VD_E2E_ONLINE=1)", async ({ page }) => {
+test("4 · YouTube through the native component, saved where Chrome saves (VD_E2E_ONLINE=1)", async ({ page, downloads }) => {
   test.skip(process.env.VD_E2E_ONLINE !== "1", "needs Internet and the installed native component");
   await page.goto("https://www.youtube.com/watch?v=jNQXAC9IVRw");
   for (const label of [/Accept all/i, /Aceptar todo/i]) {
@@ -563,7 +563,10 @@ test("4 · YouTube through the native component (VD_E2E_ONLINE=1)", async ({ pag
   await menu(page).getByRole("button", { name: /^144p/ }).click();
   await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
   const saved = (await menu(page).locator(".vd-path").first().textContent())?.trim() ?? "";
-  expect(saved).toMatch(/Me at the zoo .*144p\.mp4$/);
+  // yt-dlp writes where Chrome decided: its download folder (in these tests Chrome gives the file a
+  // random name; in a normal Chrome it is "Me at the zoo 144p.mp4").
+  expect(saved.startsWith(downloads)).toBe(true);
+  expect(saved).toMatch(/\.mp4$/);
   const info = probe(saved);
   expect(info).toMatchObject({ height: 144, video: "h264", audio: "aac" });
   rmSync(saved, { force: true });
