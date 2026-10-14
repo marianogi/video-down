@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertThrows } from "./assert.ts";
-import { cookieFileText, cookieMatchesUrl, parseCookies, parseRequest, isSafeHttpUrl } from "../src/protocol.ts";
+import { cookieFileText, cookieMatchesUrl, parseCookies, parseRequest, parseSaveTarget, isSafeHttpUrl } from "../src/protocol.ts";
 import { buildVariants, publicVariants, selectorForHeight } from "../src/variants.ts";
 import { parseProgressLine, ProgressTracker, summariseError } from "../src/progress.ts";
 import { encodeMessage, FrameDecoder, MAX_INCOMING_BYTES } from "../src/messaging.ts";
@@ -213,4 +213,28 @@ Deno.test("cookieFileText writes the Netscape format yt-dlp reads", () => {
   assertEquals(lines[0], "# Netscape HTTP Cookie File");
   assertEquals(lines[2], [".instagram.com", "TRUE", "/", "TRUE", "87400", "sessionid", "abc%3A1"].join("\t"));
   assertEquals(lines[3], ["www.example.com", "FALSE", "/x", "FALSE", "2000000000", "k", "v"].join("\t"));
+});
+
+// ---------------------------------------------------------------- where to save
+
+Deno.test("save targets: absolute folders and bare names only", () => {
+  assertEquals(parseSaveTarget({ dir: "F:\\Descargas", name: "¡Hola ñandú! 1080p" }), { dir: "F:\\Descargas", name: "¡Hola ñandú! 1080p" });
+  assert(parseSaveTarget({ dir: "/Users/me/Movies", name: "clip" }));
+  assert(parseSaveTarget({ dir: "\\\\server\\share\\videos", name: "clip" }));
+  for (const bad of [
+    { dir: "relative/dir", name: "x" },
+    { dir: "C:\\a\\..\\b", name: "x" },
+    { dir: "/tmp", name: "a/b" },
+    { dir: "/tmp", name: "a\\b" },
+    { dir: "/tmp", name: "-o" },
+    { dir: "/tmp", name: ".." },
+    { dir: "/tmp", name: "a\nb" },
+    { dir: "/tmp\u0000x", name: "a" },
+    { dir: "/tmp", name: "" },
+  ]) {
+    assert(parseSaveTarget(bad) === null, JSON.stringify(bad));
+  }
+  assert(!parseRequest({ id: "d", type: "download", probeId: "p1", variantId: "best", saveTo: { dir: "x", name: "y" } }).ok);
+  const ok = parseRequest({ id: "d", type: "download", probeId: "p1", variantId: "best", saveTo: { dir: "/tmp", name: "y" } });
+  assert(ok.ok && ok.value.type === "download" && ok.value.saveTo?.name === "y");
 });

@@ -41,7 +41,10 @@ import { withPageHeaders } from "./core/downloader/header-rules";
 import { diagUrl, formatDiagnostics, type DiagEntry } from "./core/diagnostics";
 import { needsSession, sessionCookiesFor } from "./core/native/site-session";
 import { isYoutubeHost } from "./core/router";
-import type { ProbeResultResponse, SessionCookie } from "@host/protocol";
+import type { ProbeResultResponse, SaveTarget, SessionCookie } from "@host/protocol";
+import { saveTargetFromPath } from "./core/native/save-target";
+import { shouldAskWhereToSave } from "./core/storage/settings";
+import { sanitizeFilename } from "./core/utils/file-utils";
 import {
   activeRecordingCount,
   discardRecording,
@@ -747,6 +750,56 @@ async function handleNativeProbe(payload: NativeProbePayload): Promise<NativePro
   }
 }
 
+/**
+ * Where a yt-dlp download goes: exactly where Chrome would put a normal download. yt-dlp does not
+ * go through Chrome, so a tiny placeholder download is started first: Chrome puts it in its
+ * download folder, or shows its "Save as" dialog when the user asked for one (in video-down's
+ * options or in Chrome's own settings). Once Chrome has decided the path, the placeholder is
+ * removed and yt-dlp writes the video there. Returns null to use the installer's folder.
+ */
+async function chooseNativeTarget(suggested: string): Promise<SaveTarget | "cancelled" | null> {
+  const saveAs = await shouldAskWhereToSave().catch(() => false);
+  let id: number;
+  try {
+    id = await chrome.downloads.download({
+      url: "data:application/octet-stream;base64,",
+      filename: suggested,
+      saveAs,
+      conflictAction: "uniquify",
+    });
+  } catch (err) {
+    logger.warn("could not ask Chrome where to save", err);
+    return null;
+  }
+  const item = await new Promise<chrome.downloads.DownloadItem | null>((resolve) => {
+    const finish = (value: chrome.downloads.DownloadItem | null) => {
+      chrome.downloads.onChanged.removeListener(onChanged);
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const check = () =>
+      void chrome.downloads.search({ id }).then(([found]) => {
+        if (found && found.state !== "in_progress") finish(found);
+      });
+    const onChanged = (delta: chrome.downloads.DownloadDelta) => {
+      if (delta.id === id && delta.state) check();
+    };
+    // The user may take a while in the "Save as" dialog.
+    const timer = setTimeout(() => finish(null), 30 * 60_000);
+    chrome.downloads.onChanged.addListener(onChanged);
+    check();
+  });
+  if (!item) return null;
+  if (item.state === "interrupted") {
+    await chrome.downloads.erase({ id }).catch(() => undefined);
+    return item.error === "USER_CANCELED" ? "cancelled" : null;
+  }
+  const target = saveTargetFromPath(item.filename);
+  await chrome.downloads.removeFile(id).catch(() => undefined);
+  await chrome.downloads.erase({ id }).catch(() => undefined);
+  return target;
+}
+
 async function startNativeDownload(
   payload: NativeDownloadPayload,
   origin?: Origin,
@@ -772,6 +825,14 @@ async function startNativeDownload(
     pushProgress(state);
   };
   save(() => undefined);
+
+  const suggested = `${sanitizeFilename(payload.title || "video").slice(0, 140)} ${sanitizeFilename(payload.label)}`.trim();
+  const target = await chooseNativeTarget(`${suggested}.mp4`);
+  if (target === "cancelled") {
+    save((s) => (s.progress.stage = DownloadStage.CANCELLED));
+    void afterFinish(state);
+    return { success: true, downloadId: id, via: "native" };
+  }
 
   // The probe needed the site's session: lend the same cookies, read again now, to the download.
   let cookies: SessionCookie[] | undefined;
@@ -809,7 +870,7 @@ async function startNativeDownload(
       void afterFinish(state);
       updateBadge();
     },
-  }, cookies);
+  }, cookies, target ?? undefined);
   nativeJobs.set(id, job);
   updateBadge();
   return { success: true, downloadId: id, via: "native" };

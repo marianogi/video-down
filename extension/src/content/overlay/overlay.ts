@@ -170,6 +170,14 @@ export class Overlay {
   private openKey: string | null = null;
   /** Which of the two buttons opened the menu */
   private menuKind: "download" | "record" = "download";
+  /**
+   * Where the open menu's button was, in page coordinates, when it opened. The menu stays there:
+   * some sites move one shared player from thumbnail to thumbnail (YouTube's hover previews), and
+   * the menu must not follow it to another video while it loads.
+   */
+  private anchor: { left: number; top: number; bottom: number; buttonLeft: number; buttonTop: number } | null = null;
+  /** The page the open menu's video previewed when it opened (see previewTarget) */
+  private openPreviewOf: string | undefined;
   private renderToken = 0;
   private lastRoute: Route | null = null;
   private pendingRetry: ReturnType<typeof setTimeout> | null = null;
@@ -359,7 +367,8 @@ export class Overlay {
       if (!this.byVideo.has(video)) this.track(video);
     }
     for (const tr of [...this.tracked.values()]) {
-      if (!videos.has(tr.video) || !tr.video.isConnected) this.untrack(tr);
+      // A site may take the player away while its menu is open: keep the menu until it is closed.
+      if ((!videos.has(tr.video) || !tr.video.isConnected) && this.openKey !== tr.key) this.untrack(tr);
     }
     this.scheduleLayout();
   }
@@ -556,6 +565,9 @@ export class Overlay {
         this.scheduleCollapse(tr);
       }
       const unfolded = tr.expanded || this.openKey === tr.key;
+      const pinned = this.openKey === tr.key && this.anchor;
+      const buttonLeft = pinned ? this.anchor!.buttonLeft - window.scrollX : left;
+      const buttonTop = pinned ? this.anchor!.buttonTop - window.scrollY : top;
       if (canRecord !== tr.canRecord) {
         tr.canRecord = canRecord;
         this.updateRecButton(tr);
@@ -563,9 +575,9 @@ export class Overlay {
       tr.hub.style.display = unfolded ? "none" : "grid";
       tr.trigger.style.display = unfolded ? "grid" : "none";
       tr.recButton.style.display = unfolded && canRecord ? "grid" : "none";
-      for (const [button, x] of [[tr.hub, left], [tr.trigger, left], [tr.recButton, left + 40]] as const) {
+      for (const [button, x] of [[tr.hub, buttonLeft], [tr.trigger, buttonLeft], [tr.recButton, buttonLeft + 40]] as const) {
         button.style.left = `${x}px`;
-        button.style.top = `${top}px`;
+        button.style.top = `${buttonTop}px`;
       }
       const hot =
         this.pointer.x >= r.left && this.pointer.x <= r.right && this.pointer.y >= r.top && this.pointer.y <= r.bottom;
@@ -579,7 +591,10 @@ export class Overlay {
   private positionPopover(): void {
     const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
     if (!tr) return;
-    const b = (this.menuKind === "record" ? tr.recButton : tr.trigger).getBoundingClientRect();
+    const live = (this.menuKind === "record" ? tr.recButton : tr.trigger).getBoundingClientRect();
+    const b = this.anchor
+      ? { left: this.anchor.left - window.scrollX, top: this.anchor.top - window.scrollY, bottom: this.anchor.bottom - window.scrollY }
+      : live;
     const pw = this.popover.offsetWidth || 300;
     const ph = this.popover.offsetHeight || 200;
     const vw = window.innerWidth;
@@ -652,6 +667,16 @@ export class Overlay {
     if (this.openKey) this.close(false);
     this.openKey = key;
     this.menuKind = kind;
+    const button = (kind === "record" ? tr.recButton : tr.trigger).getBoundingClientRect();
+    const trigger = tr.trigger.getBoundingClientRect();
+    this.anchor = {
+      left: button.left + window.scrollX,
+      top: button.top + window.scrollY,
+      bottom: button.bottom + window.scrollY,
+      buttonLeft: trigger.left + window.scrollX,
+      buttonTop: trigger.top + window.scrollY,
+    };
+    this.openPreviewOf = previewTarget(tr.video);
     (kind === "record" ? tr.recButton : tr.trigger).setAttribute("aria-expanded", "true");
     this.popover.hidden = false;
     this.scheduleLayout();
@@ -662,7 +687,11 @@ export class Overlay {
   private close(restoreFocus: boolean): void {
     const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
     this.openKey = null;
+    this.anchor = null;
+    this.openPreviewOf = undefined;
     this.lastRoute = null;
+    // A player taken away while its menu was open can be forgotten now.
+    this.scheduleScan();
     this.renderToken++;
     if (this.pendingRetry) clearTimeout(this.pendingRetry);
     this.popover.hidden = true;
@@ -687,11 +716,12 @@ export class Overlay {
       el("p", { className: "vd-title", text: title }),
       close,
     ]);
-    const jobs = el("div", { attrs: { "data-jobs": "" } });
+    // Downloads in progress right under the title: with many choices, below them they were out of sight.
+    const jobs = el("div", { className: "vd-jobs", attrs: { "data-jobs": "" } });
     const report = el("button", { className: "vd-link vd-diag", text: t("diagLink"), attrs: { type: "button" } });
     report.addEventListener("click", () => void send(MessageType.OPEN_DIAGNOSTICS).catch(() => undefined));
-    const footer = el("div", { className: "vd-foot" }, [report]);
-    this.popover.replaceChildren(header, ...body, jobs, footer);
+    const footer = el("div", { className: "vd-foot", attrs: { "data-foot": "" } }, [report]);
+    this.popover.replaceChildren(header, jobs, ...body, footer);
     const tr = this.openKey ? this.tracked.get(this.openKey) : undefined;
     if (tr) this.renderJobs(tr);
     this.positionPopover();
@@ -706,12 +736,14 @@ export class Overlay {
 
   /** What the router needs for a video, as if the native component were missing. */
   private routeInput(tr: Tracked): RouteInput {
-    return {
-      pageUrl: location.href,
-      video: readFacts(tr.video, tr.loadStartedAt, tr.firstSeenAt),
-      media: this.mediaFor(tr),
-      nativeAvailable: false,
-    };
+    const video = readFacts(tr.video, tr.loadStartedAt, tr.firstSeenAt);
+    // A shared preview player may already show another thumbnail: the menu is for the one it
+    // showed when it was opened.
+    if (this.openKey === tr.key) {
+      if (this.openPreviewOf) video.previewOf = this.openPreviewOf;
+      else delete video.previewOf;
+    }
+    return { pageUrl: location.href, video, media: this.mediaFor(tr), nativeAvailable: false };
   }
 
   private mediaFor(tr: Tracked): VideoMetadata[] {
@@ -797,7 +829,7 @@ export class Overlay {
       el("p", { className: "vd-muted", text: t("otherListsFailed", String(others.length)) }),
       el("p", { className: "vd-path", text: `${redactUrl(f.url)} · ${this.failureReason(f)}` }),
     ]);
-    this.popover.insertBefore(note, jobs);
+    this.popover.insertBefore(note, this.popover.querySelector("[data-foot]"));
   }
 
   private renderFailure(tr: Tracked, failure: DetectionFailure, nativeAvailable: boolean): void {

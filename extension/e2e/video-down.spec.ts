@@ -208,6 +208,13 @@ test("2 · HLS master: one entry per variant, merged with ffmpeg.wasm", async ({
   await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
   await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible();
   await downloadAndCheck(page, downloads, /720p/, { height: 720 });
+  // The progress sits above the choices, so a long list never hides it.
+  const progressFirst = await menu(page).evaluate((m) => {
+    const jobs = m.querySelector(".vd-jobs");
+    const list = m.querySelector(".vd-list");
+    return !!jobs && !!list && !!(jobs.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(progressFirst).toBe(true);
 });
 
 test("2a · HLS master whose audio rendition has no URI (Unified Streaming): every quality listed", async ({ page, baseUrl, downloads }) => {
@@ -371,7 +378,35 @@ test("12 · a preview inside a link: the full video of that page, never the teas
   await expect(menu(page).getByRole("button", { name: /Original file|360p/ })).toHaveCount(0);
 });
 
-// ---------------------------------------------------------------- recording
+test("12b · one preview player shared by thumbnails: the menu stays put, open and on its video", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/shared-preview.html`);
+  const a = (await page.locator("#a").boundingBox())!;
+  const b = (await page.locator("#b").boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await openDownload(page);
+  if (process.env.VD_E2E_NATIVE === "1") {
+    await expect(menu(page)).toContainText("Analysing the available download options, please wait...");
+  }
+  const before = (await menu(page).boundingBox())!;
+
+  // The site moves its player to the other thumbnail, then takes it away.
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.waitForTimeout(800);
+  await page.evaluate(() => (window as unknown as { removePreview(): void }).removePreview());
+  await page.waitForTimeout(800);
+
+  await expect(menu(page)).toBeVisible();
+  const after = (await menu(page).boundingBox())!;
+  expect(Math.abs(after.x - before.x)).toBeLessThan(2);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(2);
+  if (process.env.VD_E2E_NATIVE === "1") {
+    // Still the video of the first thumbnail.
+    await expect(menu(page).getByText("Page A")).toBeVisible({ timeout: 60_000 });
+    await expect(menu(page).getByText("Page B")).toHaveCount(0);
+  }
+});
+
+// ---------------------------------------------------------------- recording// ---------------------------------------------------------------- recording
 
 /** The recorder page: wait for something recorded, stop, save, and check the file with ffprobe. */
 async function recordAndSave(recorder: Page, downloads: string, seconds: number) {

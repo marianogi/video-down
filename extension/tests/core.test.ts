@@ -423,6 +423,20 @@ describe("diagnostic report", () => {
   });
 });
 
+// ------------------------------------------------------------------ where yt-dlp saves (the path Chrome chose)
+
+import { saveTargetFromPath } from "../src/core/native/save-target";
+
+describe("where yt-dlp saves", () => {
+  it("takes the folder and the name Chrome chose; yt-dlp adds the real extension", () => {
+    expect(saveTargetFromPath("F:\\Descargas\\¡ESCUCHO OPINIONES! 1080p.mp4")).toEqual({ dir: "F:\\Descargas", name: "¡ESCUCHO OPINIONES! 1080p" });
+    expect(saveTargetFromPath("/Users/me/Movies/clip (1).mp4")).toEqual({ dir: "/Users/me/Movies", name: "clip (1)" });
+    expect(saveTargetFromPath("D:\\video.mp4")).toEqual({ dir: "D:\\", name: "video" });
+    expect(saveTargetFromPath("f3b2c1d0-guid")).toBeNull();
+    expect(saveTargetFromPath("relative/dir/x.mp4")).toBeNull();
+  });
+});
+
 // ------------------------------------------------------------------ previews (a video inside a link)
 
 describe("previews", () => {

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Grid with one shared preview player</title>
+<style>
+  body { margin: 40px; font-family: sans-serif; }
+  .thumb { display: inline-block; width: 480px; height: 270px; margin: 20px; background: #334155; vertical-align: top; }
+  .thumb video { width: 480px; height: 270px; display: block; }
+</style>
+</head><body><h1>Grid with one shared preview player</h1>
+<!-- Like YouTube's home page: ONE preview player that the site moves into whichever thumbnail the
+     pointer is over (each thumbnail is a link to its full video), and takes away afterwards. -->
+<a id="a" class="thumb" href="/page-a.html"></a><a id="b" class="thumb" href="/page-b.html"></a>
+<script>
+  const v = document.createElement("video");
+  v.src = "/media/clip-360.mp4";
+  v.muted = true;
+  v.loop = true;
+  v.playsInline = true;
+  for (const id of ["a", "b"]) {
+    document.getElementById(id).addEventListener("mouseenter", () => {
+      document.getElementById(id).appendChild(v);
+      v.play().catch(() => undefined);
+    });
+  }
+  window.removePreview = () => v.remove();
+</script>
+</body></html>

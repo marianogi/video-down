@@ -7,6 +7,26 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.3 (2026-10-15)
+
+- **Caracteres especiales en lo que descarga yt-dlp.** En Windows, yt-dlp escribía su salida en la
+  página de códigos de la consola y la ruta que devuelve llegaba estropeada («¡» se veía «�»). Ahora se
+  lanza con `--encoding utf-8`. El fichero ya se guardaba con el nombre correcto; lo estropeado era la
+  ruta que mostraba el menú.
+- **yt-dlp guarda donde guardaría Chrome, y pregunta si se lo pides.** Antes iba a la carpeta fijada
+  por el instalador sin preguntar nunca. Ahora una descarga mínima de marcador deja que Chrome decida la
+  ruta (su carpeta de descargas, o su diálogo «Guardar como» si está activado en video-down o en Chrome);
+  se borra al momento y yt-dlp escribe allí el vídeo, con ese nombre. Cancelar el diálogo cancela la
+  descarga. El componente nativo valida la carpeta y el nombre.
+- **El progreso, arriba del menú.** Con muchas opciones quedaba debajo y no se veía.
+- **El menú se queda quieto y con su vídeo.** YouTube usa un único reproductor para todas sus
+  previsualizaciones y lo mueve de miniatura en miniatura: el menú lo seguía y acababa en otro sitio.
+  Ahora, al abrirse, fija su posición en la página y el vídeo al que se refiere, y no se cierra aunque
+  la web retire el reproductor mientras carga.
+- **Mensaje mientras carga:** «Analizando las opciones de descarga disponibles, espera por favor...».
+- Pruebas: 64 unitarias, 17 del componente nativo y una de extremo a extremo con un reproductor de
+  previsualización compartido que la página mueve y retira con el menú abierto.
+
 ## 0.2.2 (2026-10-14)
 
 - **Un solo icono de «play»** en cada vídeo. Al pasar el ratón (o al pulsarlo, con el teclado o en

@@ -65,6 +65,16 @@ export interface DownloadRequest {
   variantId: string;
   /** The site's session, when the probe needed it. The host checks them against the probe's URL. */
   cookies?: SessionCookie[];
+  /**
+   * Where to save: the folder and file name (without extension) that Chrome chose for this
+   * download, through its own "Save as" dialog or its download folder. Default: the installer's.
+   */
+  saveTo?: SaveTarget;
+}
+
+export interface SaveTarget {
+  dir: string;
+  name: string;
 }
 
 export interface UpdateRequest {
@@ -300,6 +310,25 @@ export function cookieFileText(cookies: SessionCookie[], nowSeconds: number): st
   return `${lines.join("\n")}\n`;
 }
 
+// deno-lint-ignore no-control-regex
+const PATH_CONTROL_RE = /[\u0000-\u001f\u007f]/;
+const BAD_NAME_RE = /[\\/:*?"<>|]/;
+
+/**
+ * A save target: an absolute folder (Windows drive or UNC path, or POSIX) without ".." segments,
+ * and a bare file name. Both come from Chrome's own save dialog, checked again here.
+ */
+export function parseSaveTarget(raw: unknown): SaveTarget | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { dir, name } = raw as Record<string, unknown>;
+  if (typeof dir !== "string" || dir.length < 1 || dir.length > 1024 || PATH_CONTROL_RE.test(dir)) return null;
+  if (!/^(?:[A-Za-z]:[\\/]|\\\\[^\\/]|\/)/.test(dir)) return null;
+  if (dir.split(/[\\/]/).some((part) => part === "..")) return null;
+  if (typeof name !== "string" || name.length < 1 || name.length > 200 || PATH_CONTROL_RE.test(name)) return null;
+  if (BAD_NAME_RE.test(name) || name.startsWith("-") || /^\.+$/.test(name)) return null;
+  return { dir, name };
+}
+
 /**
  * Validate an untrusted message coming from the extension.
  * Returns the typed request or a human-readable reason.
@@ -335,6 +364,11 @@ export function parseRequest(raw: unknown): { ok: true; value: HostRequest } | {
       if (!isSafeId(msg.probeId)) return { ok: false, reason: "invalid probeId", id };
       if (!isSafeVariantId(msg.variantId)) return { ok: false, reason: "invalid variantId", id };
       const value: DownloadRequest = { id, type: "download", probeId: msg.probeId, variantId: msg.variantId };
+      if (msg.saveTo !== undefined) {
+        const saveTo = parseSaveTarget(msg.saveTo);
+        if (!saveTo) return { ok: false, reason: "invalid save target", id };
+        value.saveTo = saveTo;
+      }
       if (msg.cookies !== undefined) {
         // Shape only here: the host matches their domain against the stored probe's URL.
         const cookies = parseCookies(msg.cookies);

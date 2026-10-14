@@ -100,7 +100,7 @@ export function startServer(port = 0) {
       }
       if (pathname === "/session/post.html") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(
-          '<!doctype html><html><head><meta charset="utf-8"><title>Members post</title></head>' +
+          '<!doctype html><html><head><meta charset="utf-8"><title>¡Members post, ñandú! «test»</title></head>' +
             '<body><h1>Members post</h1><video controls src="/session/clip.mp4"></video></body></html>',
         );
         return;

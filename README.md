@@ -42,8 +42,14 @@ Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo de
 Con el icono plegado se sigue viendo si hay algo en marcha: el anillo de progreso de una descarga y un
 punto rojo si se está grabando. Escape vuelve a plegarlo.
 
-El fichero se guarda en la carpeta de descargas de Chrome. En las opciones se puede pedir que Chrome
-pregunte dónde guardar cada descarga.
+El fichero se guarda en la carpeta de descargas de Chrome, también cuando lo descarga yt-dlp. Si pides
+que se pregunte dónde guardar (en las opciones de video-down o en las de Chrome), aparece el diálogo
+«Guardar como» de Chrome en todas las descargas.
+
+Mientras se cargan las opciones, el menú dice «Analizando las opciones de descarga disponibles, espera
+por favor...». El progreso de las descargas sale arriba del menú, encima de las opciones. Una vez
+abierto, el menú se queda donde estaba y con el vídeo con el que se abrió, aunque la página mueva su
+reproductor (YouTube usa uno solo para todas sus previsualizaciones).
 
 En las emisiones en directo, el botón con el punto rojo **graba** lo que se emite, con diferido. Ver
 [Grabar en directo, con diferido](#grabar-en-directo-con-diferido).
@@ -412,9 +418,17 @@ el ffmpeg nativo solo existe si se ha instalado el componente nativo.
 3. El lanzador (`video-down-host.cmd` o `video-down-host.sh`) arranca Deno con permisos explícitos:
    solo puede leer su propia carpeta, escribir en sus subcarpetas de trabajo y ejecutar yt-dlp.
 4. `host.ts` recibe un mensaje JSON validado (`ping`, `probe`, `download` o `update`), lanza yt-dlp
-   y devuelve el progreso. `probe` y `download` pueden llevar las cookies de la web cuando hace falta
+   y devuelve el progreso. yt-dlp se lanza siempre con `--encoding utf-8`: sin ello, en Windows escribe
+   en la página de códigos de la consola y los nombres con «¡», «ñ», acentos o caracteres no latinos
+   llegaban estropeados.
+5. **Dónde guarda yt-dlp.** Como yt-dlp no pasa por Chrome, antes de empezar la extensión inicia una
+   descarga mínima de marcador para que Chrome decida la ruta: su carpeta de descargas o su diálogo
+   «Guardar como». En cuanto Chrome la decide, borra el marcador y yt-dlp escribe el vídeo en esa
+   carpeta y con ese nombre (`download` con `saveTo`). El componente nativo solo acepta una carpeta
+   absoluta, sin `..`, y un nombre sin separadores ni caracteres de control. Si se cancela el diálogo,
+   no se descarga nada. `probe` y `download` pueden llevar las cookies de la web cuando hace falta
    (caso 5); se rechazan si alguna es de otra web o tiene caracteres de control.
-5. Cada operación es un proceso aparte. Cancelar una descarga cierra la conexión, y el componente
+6. Cada operación es un proceso aparte. Cancelar una descarga cierra la conexión, y el componente
    detiene yt-dlp y borra sus ficheros temporales.
 
 ---
@@ -521,7 +535,7 @@ video-down/
 ├─ bin/                        deno, ffmpeg, ffprobe, yt-dlp (+ installed.json con las versiones)
 ├─ video-down-host.cmd / .sh   Lanzador con los permisos de Deno
 ├─ native-host-manifest.json   Manifiesto que Chrome lee para encontrar el lanzador
-├─ config.json                 Carpeta de descargas del componente nativo
+├─ config.json                 Carpeta de descargas de reserva del componente nativo (normalmente se usa la que decide Chrome)
 ├─ state/ tmp/ logs/ cache/    Consultas recientes, temporales de yt-dlp, registro y caché
 └─ install / uninstall         Para reinstalar o actualizar sin el paquete original
 ```
@@ -615,7 +629,7 @@ Se abren desde el botón de video-down de la barra de Chrome → **Opciones**.
 
 | Ajuste | Por defecto | Efecto |
 |---|---|---|
-| Preguntar dónde guardar | No | Chrome muestra «Guardar como» en cada descarga del navegador |
+| Preguntar dónde guardar | No | Chrome muestra «Guardar como» en cada descarga, también en las de yt-dlp. Si está desactivado, manda la preferencia del propio Chrome |
 | Mostrar el icono sobre los vídeos | Sí | Desactívalo para que la extensión no pinte nada |
 | Notificación al terminar | No | Aviso del sistema al acabar cada descarga |
 | Guardar historial | Sí | Conserva la lista de descargas terminadas |
@@ -666,9 +680,9 @@ Para probar la extensión sin instalador: `chrome://extensions` → modo de desa
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 63) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, masters con la pista de audio declarada sin dirección (Unified Streaming), búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido, perfiles de captura y previsualizaciones | `pnpm test` |
-| Unitarias del componente nativo (Deno, 16) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) y formato del fichero de cookies | `deno task test` |
-| Extremo a extremo (Playwright, 30 + 5 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS con la pista de audio declarada sin dirección (Unified Streaming), HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, grabación de un directo HLS simulado (copia exacta, diferido y MP4), captura del reproductor con los cuatro perfiles (diferido y MP4) sobre un directo sin lista (MediaStream), captura de un directo cuyo audio no arranca (solo imagen), previsualización dentro de un enlace (vídeo completo de la página enlazada), el icono que se desdobla con el ratón y con el teclado, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
+| Unitarias de la extensión (Vitest, 64) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, masters con la pista de audio declarada sin dirección (Unified Streaming), búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido, perfiles de captura, previsualizaciones y la carpeta y el nombre que Chrome eligió para yt-dlp | `pnpm test` |
+| Unitarias del componente nativo (Deno, 17) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) formato del fichero de cookies y destino de guardado (carpetas absolutas, nombres sin separadores) | `deno task test` |
+| Extremo a extremo (Playwright, 31 + 5 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS con la pista de audio declarada sin dirección (Unified Streaming), HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, grabación de un directo HLS simulado (copia exacta, diferido y MP4), captura del reproductor con los cuatro perfiles (diferido y MP4) sobre un directo sin lista (MediaStream), captura de un directo cuyo audio no arranca (solo imagen), previsualización dentro de un enlace (vídeo completo de la página enlazada), un reproductor de previsualización compartido que la web mueve y retira con el menú abierto (el menú no se mueve, no se cierra y sigue con su vídeo), el progreso encima de las opciones, el icono que se desdobla con el ratón y con el teclado, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador, **comparación de calidades con yt-dlp** como segunda opinión y **muro de una web con sesión**: enlace propio de la publicación, sesión prestada para consultar y para descargar (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
 Las pruebas de extremo a extremo usan una compilación aparte (`dist-e2e`) que solo cambia una cosa:

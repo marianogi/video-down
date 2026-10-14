@@ -13,6 +13,7 @@ import type {
   HostResponse,
   PongResponse,
   ProbeResultResponse,
+  SaveTarget,
   SessionCookie,
   ProgressResponse,
   UpdateResultResponse,
@@ -213,9 +214,17 @@ export function nativeDownload(
   variantId: string,
   cb: NativeDownloadCallbacks,
   cookies?: SessionCookie[],
+  saveTo?: SaveTarget,
 ): { cancel(): void } {
   let done = false;
-  const request = { id: newId(), type: "download" as const, probeId, variantId, ...(cookies?.length ? { cookies } : {}) };
+  const request = {
+    id: newId(),
+    type: "download" as const,
+    probeId,
+    variantId,
+    ...(cookies?.length ? { cookies } : {}),
+    ...(saveTo ? { saveTo } : {}),
+  };
   const s = session(request, (m) => {
     switch (m.type) {
       case "download-started":
