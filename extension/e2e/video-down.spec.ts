@@ -436,9 +436,53 @@ test("12e · a preview laid over its thumbnail (not inside the link): the full v
   if (process.env.VD_E2E_NATIVE === "1") {
     await expect(menu(page).getByText("Page A")).toBeVisible({ timeout: 60_000 });
   } else {
-    await expect(menu(page).getByText(/This is a preview|native component is needed/i).first()).toBeVisible({ timeout: 30_000 });
+    await expect(menu(page).getByText(/This is a preview|native component is needed|Page A/i).first()).toBeVisible({ timeout: 30_000 });
   }
   await expect(menu(page).getByRole("button", { name: /Original file|360p/ })).toHaveCount(0);
+});
+
+test("12f · a preview taken away when the pointer reaches the icon: the icon stays, still and usable", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/hover-preview.html`);
+  const thumb = (await page.locator("#thumb").boundingBox())!;
+  await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2);
+  await expect(hub(page)).toHaveCount(1, { timeout: 10_000 });
+  await unfold(page, hub(page), trigger(page));
+  await page.waitForTimeout(300); // the unfolding animation
+  // Moving onto the icon left the thumbnail, so the page took its preview away. The icon used to
+  // vanish with it; the thumbnail was then under the pointer again, the preview came back, and so
+  // on, many times a second.
+  await expect(page.locator("#thumb video")).toHaveCount(0);
+  const first = (await trigger(page).boundingBox())!;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(75);
+    expect(await trigger(page).isVisible()).toBe(true);
+    const now = (await trigger(page).boundingBox())!;
+    expect(Math.abs(now.x - first.x) + Math.abs(now.y - first.y)).toBeLessThan(1);
+  }
+  expect(await page.evaluate(() => (window as unknown as { enters: number }).enters)).toBeLessThanOrEqual(2);
+  await trigger(page).click();
+  await expect(recButton(page)).toBeHidden();
+  if (process.env.VD_E2E_NATIVE === "1") {
+    await expect(menu(page).getByText("Page A")).toBeVisible({ timeout: 60_000 });
+  } else {
+    await expect(menu(page).getByText(/This is a preview|native component is needed|Page A/i).first()).toBeVisible({ timeout: 30_000 });
+  }
+  await expect(menu(page).getByRole("button", { name: /Original file|360p/ })).toHaveCount(0);
+});
+
+test("12g · resting the pointer on the icon starts looking for the choices: the menu opens with them", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/slow-size.html`);
+  await expect(hub(page)).toHaveCount(1, { timeout: 10_000 });
+  const heads = async () => Number(await (await page.request.get(`${baseUrl}/slowhead-count`)).text());
+  const before = await heads();
+  await unfold(page, hub(page), trigger(page));
+  // The file's size is asked while the pointer rests on the icon, before any click.
+  await expect.poll(heads, { timeout: 5000 }).toBe(before + 1);
+  await page.waitForTimeout(3500);
+  await trigger(page).click();
+  // Already answered: no second question and no 3 s wait.
+  await expect(menu(page).getByRole("button", { name: /360p.*(KB|MB)/ })).toBeVisible({ timeout: 1500 });
+  expect(await heads()).toBe(before + 1);
 });
 
 // ---------------------------------------------------------------- recording

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Preview while the pointer is on the thumbnail</title>
+<style>
+  body { margin: 40px; font-family: sans-serif; }
+  #thumb { display: block; width: 480px; height: 270px; background: #334155; }
+  #thumb video { width: 480px; height: 270px; display: block; }
+</style>
+</head><body><h1>Preview while the pointer is on the thumbnail</h1>
+<!-- Like YouTube's home page: the preview plays while the pointer is on the thumbnail and is taken
+     away the moment it leaves. The extension's icon is not inside the thumbnail, so moving onto it
+     counts as leaving the thumbnail. -->
+<a id="thumb" href="/page-a.html"></a>
+<script>
+  const thumb = document.getElementById("thumb");
+  window.enters = 0;
+  thumb.addEventListener("mouseenter", () => {
+    window.enters++;
+    const v = document.createElement("video");
+    v.src = "/media/clip-360.mp4";
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    thumb.appendChild(v);
+    v.play().catch(() => undefined);
+  });
+  thumb.addEventListener("mouseleave", () => thumb.replaceChildren());
+</script>
+</body></html>

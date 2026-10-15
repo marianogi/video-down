@@ -14,6 +14,8 @@
 //                        login: post.html is a post page with its video, clip.mp4 that video
 //   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc, and the
 //                        master (clip.m3u8) answers 1.5 s late
+//   /slowhead/*          the files of /media/, but a HEAD request (how the extension asks a file's
+//                        size) answers 3 s late; /slowhead-count says how many HEAD requests came
 //   /protected/hls/cross-master.m3u8
 //                        master whose variants and segments live on ANOTHER host (localhost vs
 //                        127.0.0.1), all of them requiring the player's Referer
@@ -35,6 +37,7 @@ const TYPES = {
 };
 
 const usedTokens = new Set();
+let slowHeads = 0;
 const LIVE_START = Date.now();
 const LIVE_LOOP = 15; // segments in fixtures/media/live
 const LIVE_WINDOW = 6;
@@ -54,8 +57,19 @@ export function startServer(port = 0) {
   const server = createServer((req, res) => {
     // The master next to a lone variant answers late, so the menu is already open with that one
     // quality when the master is found (as on a slow machine or CDN).
-    if (new URL(req.url, "http://localhost").pathname === "/media/uni/clip.m3u8") {
+    const pathname = new URL(req.url, "http://localhost").pathname;
+    if (pathname === "/media/uni/clip.m3u8") {
       setTimeout(() => handle(req, res), 1500);
+      return;
+    }
+    // A slow size lookup: the menu opened right after hovering must already have it.
+    if (pathname.startsWith("/slowhead/") && req.method === "HEAD") {
+      slowHeads++;
+      setTimeout(() => handle(req, res), 3000);
+      return;
+    }
+    if (pathname === "/slowhead-count") {
+      res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }).end(String(slowHeads));
       return;
     }
     handle(req, res);
@@ -108,6 +122,8 @@ export function startServer(port = 0) {
       if (pathname === "/session/clip.mp4") pathname = "/media/clip-360.mp4";
     } else if (pathname.startsWith("/once/")) {
       pathname = pathname.replace("/once/", "/media/hls/");
+    } else if (pathname.startsWith("/slowhead/")) {
+      pathname = pathname.replace("/slowhead/", "/media/");
     } else if (pathname.startsWith("/media/uni/") && pathname.endsWith(".m3u8") && url.searchParams.get("token") !== "abc") {
       res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: missing token");
       return;

@@ -77,6 +77,15 @@ interface Tracked {
   /** The page this video previews (see previewTarget), checked at most every SIGHT_MS */
   previewOf: string | undefined;
   previewCheckedAt: number;
+  /**
+   * While the pointer is on the icon, the icon stays where it was and keeps its video. The page
+   * may react to the pointer leaving its own element (YouTube stops its preview when the pointer
+   * moves onto the icon, which sits outside the page's tree): without this, the icon vanished,
+   * the page restarted the preview under the pointer, the icon came back, and so on in a loop.
+   */
+  lock: { left: number; top: number; previewOf: string | undefined } | null;
+  /** Hover intent before the choices are loaded in the background */
+  prefetchTimer: ReturnType<typeof setTimeout> | null;
   pointerInside: boolean;
   collapseTimer: ReturnType<typeof setTimeout> | null;
   trigger: HTMLButtonElement;
@@ -106,6 +115,8 @@ type Choice =
   | { kind: "native"; label: string; meta: string; payload: NativeDownloadPayload };
 
 const MIN_VIDEO_HEIGHT = 60;
+/** How long the pointer must rest on an icon before its choices start loading (ms). */
+const PREFETCH_DELAY_MS = 250;
 /** How often what covers a video, and what it previews, is looked at again (ms). */
 const SIGHT_MS = 300;
 /** Pixels around the icon that still count as over it (a pointer resting on its edge). */
@@ -375,8 +386,10 @@ export class Overlay {
       if (!this.byVideo.has(video)) this.track(video);
     }
     for (const tr of [...this.tracked.values()]) {
-      // A site may take the player away while its menu is open: keep the menu until it is closed.
-      if ((!videos.has(tr.video) || !tr.video.isConnected) && this.openKey !== tr.key) this.untrack(tr);
+      // A site may take the player away while its menu is open, or while the pointer is on its
+      // icon: keep them until the menu is closed or the icon folds back.
+      const gone = !videos.has(tr.video) || !tr.video.isConnected;
+      if (gone && this.openKey !== tr.key && !tr.lock) this.untrack(tr);
     }
     this.scheduleLayout();
   }
@@ -450,6 +463,8 @@ export class Overlay {
       sightCheckedAt: 0,
       previewOf: undefined,
       previewCheckedAt: 0,
+      lock: null,
+      prefetchTimer: null,
       pointerInside: false,
       collapseTimer: null,
       trigger,
@@ -499,6 +514,7 @@ export class Overlay {
     if (this.openKey === tr.key) this.close(false);
     this.resizeObserver.unobserve(tr.video);
     if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
+    if (tr.prefetchTimer) clearTimeout(tr.prefetchTimer);
     tr.hub.remove();
     tr.trigger.remove();
     tr.recButton.remove();
@@ -548,15 +564,15 @@ export class Overlay {
         style.visibility !== "hidden" &&
         style.display !== "none" &&
         !this.outOfSight(tr);
-      tr.visible = visible || this.openKey === tr.key;
+      tr.visible = visible || this.openKey === tr.key || !!tr.lock;
       if (!tr.visible) {
         tr.hub.style.display = "none";
         tr.trigger.style.display = "none";
         tr.recButton.style.display = "none";
         continue;
       }
-      const left = Math.min(Math.max(r.left, 0) + OFFSET, vw - 82);
-      const top = Math.min(Math.max(r.top, 0) + OFFSET, vh - 42);
+      const left = tr.lock ? tr.lock.left - window.scrollX : Math.min(Math.max(r.left, 0) + OFFSET, vw - 82);
+      const top = tr.lock ? tr.lock.top - window.scrollY : Math.min(Math.max(r.top, 0) + OFFSET, vh - 42);
       const canRecord = this.canRecord(tr);
       // Pointer over the icon (or, unfolded, over its buttons): unfold; once it leaves, fold back.
       const width = tr.expanded && canRecord ? 74 : 34;
@@ -566,6 +582,19 @@ export class Overlay {
         this.pointer.y >= top - HOVER_MARGIN &&
         this.pointer.y <= top + 34 + HOVER_MARGIN;
       if (inside) {
+        if (!tr.lock) {
+          tr.lock = {
+            left: left + window.scrollX,
+            top: top + window.scrollY,
+            previewOf: previewTarget(tr.video, this.host),
+          };
+        }
+        if (!tr.pointerInside && !tr.prefetchTimer) {
+          tr.prefetchTimer = setTimeout(() => {
+            tr.prefetchTimer = null;
+            if (tr.pointerInside) this.prefetch(tr);
+          }, PREFETCH_DELAY_MS);
+        }
         tr.pointerInside = true;
         if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
         tr.collapseTimer = null;
@@ -575,6 +604,8 @@ export class Overlay {
         }
       } else if (tr.pointerInside) {
         tr.pointerInside = false;
+        if (tr.prefetchTimer) clearTimeout(tr.prefetchTimer);
+        tr.prefetchTimer = null;
         this.scheduleCollapse(tr);
       }
       const unfolded = tr.expanded || this.openKey === tr.key;
@@ -663,13 +694,18 @@ export class Overlay {
    */
   private canRecord(tr: Tracked): boolean {
     if (tr.recording) return true;
-    if (tr.video.getAttribute(DRM_ATTR) || this.previewOf(tr)) return false;
+    if (tr.video.getAttribute(DRM_ATTR) || (tr.lock ? tr.lock.previewOf : this.previewOf(tr))) return false;
     return isLiveElement(tr.video) || this.mediaFor(tr).some((m) => m.isLive && !m.hasDrm);
   }
 
   private setExpanded(tr: Tracked, on: boolean, focusDownload = false): void {
     if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
     tr.collapseTimer = null;
+    if (!on && this.openKey !== tr.key && tr.lock) {
+      tr.lock = null;
+      // A player taken away while the pointer was on its icon can be forgotten now.
+      this.scheduleScan();
+    }
     if (tr.expanded !== on) {
       tr.expanded = on;
       tr.hub.setAttribute("aria-expanded", String(on));
@@ -707,7 +743,7 @@ export class Overlay {
       buttonLeft: trigger.left + window.scrollX,
       buttonTop: trigger.top + window.scrollY,
     };
-    this.openPreviewOf = previewTarget(tr.video, this.host);
+    this.openPreviewOf = tr.lock ? tr.lock.previewOf : previewTarget(tr.video, this.host);
     (kind === "record" ? tr.recButton : tr.trigger).setAttribute("aria-expanded", "true");
     this.popover.hidden = false;
     this.scheduleLayout();
@@ -770,8 +806,9 @@ export class Overlay {
     const video = readFacts(tr.video, tr.loadStartedAt, tr.firstSeenAt);
     // A shared preview player may already show another thumbnail: the menu is for the one it
     // showed when it was opened.
-    if (this.openKey === tr.key) {
-      if (this.openPreviewOf) video.previewOf = this.openPreviewOf;
+    const pinned = this.openKey === tr.key ? { previewOf: this.openPreviewOf } : tr.lock;
+    if (pinned) {
+      if (pinned.previewOf) video.previewOf = pinned.previewOf;
       else delete video.previewOf;
     }
     return { pageUrl: location.href, video, media: this.mediaFor(tr), nativeAvailable: false };
@@ -962,16 +999,72 @@ export class Overlay {
     return p;
   }
 
-  // ---- direct files
+  // ---- loaders, shared by the menu and the prefetch on hover (same cache, same promise)
 
-  private async renderDirect(tr: Tracked, sources: DirectSource[], token: number): Promise<void> {
-    const reply = await this.cached(`direct:${sources.map((s) => s.url).join("|")}`, () =>
+  private loadDirect(sources: DirectSource[]): Promise<GetVariantsReply> {
+    return this.cached(`direct:${sources.map((s) => s.url).join("|")}`, () =>
       send<GetVariantsReply>(MessageType.GET_VARIANTS, {
         url: sources[0]!.url,
         format: VideoFormat.DIRECT,
         sources: sources.map((s) => s.url),
       }),
-    ).catch(() => null);
+    );
+  }
+
+  private loadManifest(media: VideoMetadata, duration: number | undefined): Promise<GetVariantsReply> {
+    return this.cached(`manifest:${media.url}`, () => {
+      const text = this.deps.bodyFor(media.url);
+      return send<GetVariantsReply>(MessageType.GET_VARIANTS, {
+        url: media.url,
+        format: media.format,
+        duration,
+        ...(text ? { text } : {}),
+      });
+    });
+  }
+
+  private loadNative(url: string, referer: string | undefined): Promise<NativeProbeReply> {
+    return this.cached(`native:${url}`, () =>
+      send<NativeProbeReply>(MessageType.NATIVE_PROBE, referer ? { url, referer } : { url }),
+    );
+  }
+
+  private nativePrefetches = 0;
+
+  /**
+   * The pointer rests on the icon: start loading the choices now, so the menu opens with them
+   * (or closer to them) when it is clicked. Only one yt-dlp query ahead of time at once, so moving
+   * the pointer across a grid of previews does not start one per thumbnail.
+   */
+  private prefetch(tr: Tracked): void {
+    if (this.openKey === tr.key) return;
+    const input = this.routeInput(tr);
+    const duration = Number.isFinite(tr.video.duration) ? tr.video.duration : undefined;
+    const start = (r: Route) => {
+      if (r.kind === "direct") void this.loadDirect(r.sources).catch(() => undefined);
+      else if (r.kind === "manifest") void this.loadManifest(r.media, duration).catch(() => undefined);
+      else if (r.kind === "native" && this.nativePrefetches === 0 && !this.cache.has(`native:${r.url}`)) {
+        this.nativePrefetches++;
+        const referer = r.reason === "youtube" ? undefined : referrerForNative();
+        void this.loadNative(r.url, referer)
+          .catch(() => undefined)
+          .finally(() => this.nativePrefetches--);
+      }
+    };
+    const r = route(input);
+    if (r.kind === "need-native") {
+      void this.deps.isNativeAvailable().then((ok) => {
+        if (ok) start(route({ ...input, nativeAvailable: true }));
+      }).catch(() => undefined);
+    } else {
+      start(r);
+    }
+  }
+
+  // ---- direct files
+
+  private async renderDirect(tr: Tracked, sources: DirectSource[], token: number): Promise<void> {
+    const reply = await this.loadDirect(sources).catch(() => null);
     if (token !== this.renderToken) return;
     const sizes = new Map<string, number>();
     for (const v of reply?.variants ?? []) if (v.approxBytes) sizes.set(v.id, v.approxBytes);
@@ -1010,15 +1103,7 @@ export class Overlay {
     const duration = Number.isFinite(tr.video.duration) ? tr.video.duration : undefined;
     let reply: GetVariantsReply;
     try {
-      reply = await this.cached(`manifest:${media.url}`, () => {
-        const text = this.deps.bodyFor(media.url);
-        return send<GetVariantsReply>(MessageType.GET_VARIANTS, {
-          url: media.url,
-          format: media.format,
-          duration,
-          ...(text ? { text } : {}),
-        });
-      });
+      reply = await this.loadManifest(media, duration);
     } catch (err) {
       reply = { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1072,9 +1157,7 @@ export class Overlay {
     this.renderLoading(t("askingNative"));
     let reply: NativeProbeReply;
     try {
-      reply = await this.cached(`native:${url}`, () =>
-        send<NativeProbeReply>(MessageType.NATIVE_PROBE, referer ? { url, referer } : { url }),
-      );
+      reply = await this.loadNative(url, referer);
     } catch (err) {
       reply = { success: false, error: err instanceof Error ? err.message : String(err) };
     }

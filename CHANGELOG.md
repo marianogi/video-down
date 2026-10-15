@@ -7,6 +7,25 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.5 (2026-10-15)
+
+- **El icono ya no parpadea sobre las previsualizaciones de YouTube.** El icono de video-down no forma
+  parte de la página, así que, al ponerle el ratón encima, YouTube entendía que el ratón había salido
+  de la miniatura y retiraba la previsualización. El icono desaparecía con ella, el ratón volvía a
+  quedar sobre la miniatura, YouTube la reproducía otra vez y el icono volvía a salir: así en bucle,
+  y con el puntero desapareciendo también. Ahora, mientras el ratón está sobre el icono, el icono se
+  queda donde estaba y con su vídeo, aunque la página retire el reproductor. Se suelta al apartar el
+  ratón.
+- **Las opciones de descarga se buscan al pasar el ratón por el icono.** Si el ratón se queda un
+  cuarto de segundo sobre el icono, la extensión empieza a buscar en segundo plano las calidades y
+  tamaños disponibles. Al hacer clic, el menú las tiene ya, o le falta menos para tenerlas. Solo se
+  hace una consulta anticipada a yt-dlp a la vez, para que pasar el ratón por una cuadrícula de
+  miniaturas no lance una por cada una.
+- Pruebas: de extremo a extremo, una previsualización que la página retira en cuanto el ratón sale de
+  su miniatura (el icono no se mueve ni desaparece durante un segundo y medio) y un fichero cuyo
+  servidor tarda 3 s en dar su tamaño (se pregunta una sola vez, antes del clic, y el menú abre con
+  él). Las dos fallan con la 0.2.4.
+
 ## 0.2.4 (2026-10-15)
 
 - **Sin iconos duplicados ni descolocados al abrir un vídeo desde su previsualización.** YouTube no
