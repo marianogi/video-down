@@ -715,15 +715,15 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.7, 15/10/2026)
+### Estado de verificación (versión 0.2.8, 15/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.6; extensión y componente nativo en 0.2.7 | Correcto |
-| Windows 11 | Las 43 pruebas de extremo a extremo, incluida YouTube real | 43 de 43 |
-| Windows 11 | La prueba nueva (fallos propios de una página sin atender) con el código de la 0.2.6 | Falla: `TypeError: Failed to fetch` atribuido a `main-world.js` de la extensión |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 42 de 42 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 42 de 42 (YouTube no se ejecuta en GitHub). En una ejecución anterior falló una vez la página del grabador sin textos de Chrome; de ahí los textos de reserva |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.7; extensión y componente nativo en 0.2.8 | Correcto |
+| Windows 11 | Las 45 pruebas de extremo a extremo, incluida YouTube real (que comprueba además que un vídeo normal no muestra el botón de grabar) | 45 de 45 |
+| Windows 11 | Las dos pruebas nuevas (directo cuya lista solo atiende al reproductor, directo con duración que crece) con el código de la 0.2.7 | Fallan las dos: sin botón de grabar, como en el directo del usuario |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 44 de 44 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 44 de 44 (YouTube no se ejecuta en GitHub) |
 
 El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas: se ha comprobado
 la ruta que Chrome decide sin diálogo, no el diálogo en sí.
