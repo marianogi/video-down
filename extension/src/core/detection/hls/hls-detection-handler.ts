@@ -64,6 +64,10 @@ interface MasterPlaylistInfo {
   url: string;
   variantUrls: Set<string>;
   variantPathKeys: Set<string>;
+  /** Its text (with a variant's, when one was read), once handled */
+  text: string | undefined;
+  /** What it was last reported as */
+  isLive: boolean | undefined;
 }
 
 /**
@@ -82,6 +86,7 @@ export class HlsDetectionHandler {
   private masterPlaylists: Map<string, MasterPlaylistInfo> = new Map();
   // Deduplicate HLS URLs by origin+pathname (ignoring query params like tokens/timestamps)
   private seenPathKeys: Set<string> = new Set();
+  private variantLiveness: Map<string, boolean> = new Map();
   private readonly maxSeenPathKeys: number;
   private readonly maxMasterPlaylists: number;
 
@@ -219,6 +224,9 @@ export class HlsDetectionHandler {
     playlistText: string,
   ): Promise<VideoMetadata | null> {
     const belongsToMaster = this.checkIfBelongsToMasterPlaylist(normalizedUrl);
+    // A media playlist without #EXT-X-ENDLIST is a live stream
+    const isLive = !playlistText.includes("#EXT-X-ENDLIST");
+    this.rememberLiveness(normalizedUrl, isLive);
 
     if (belongsToMaster) {
       logger.debug(
@@ -227,12 +235,11 @@ export class HlsDetectionHandler {
       );
       this.onDiagnostic?.("variant-of-master", url);
       this.removeDetectedVideo(normalizedUrl);
+      await this.updateMasterLiveness(normalizedUrl, isLive, playlistText);
       return null;
     }
 
     // It's a standalone media playlist, add it as M3U8 format
-    // A media playlist without #EXT-X-ENDLIST is a live stream
-    const isLive = !playlistText.includes("#EXT-X-ENDLIST");
     logger.debug(`[video-down] HLS media playlist: ${redactUrl(url)}`);
     const metadata = await this.addDetectedVideo(url, VideoFormat.M3U8, playlistText, isLive);
     void this.discoverMaster(url);
@@ -303,13 +310,40 @@ export class HlsDetectionHandler {
     // Keys usually live in the variant playlists, not in the master, so the
     // first variant is inspected for liveness *and* for DRM markers.
     const probe = await this.probeFirstVariant(levels);
+    // A variant the player has already read says more than our own reading, which the server may
+    // have refused (many live CDNs only answer their player).
+    const known = levels.map((l) => this.variantLiveness.get(this.getPathKey(normalizeUrl(l.uri)))).find((v) => v !== undefined);
+    const isLive = known ?? probe.isLive;
+    const text = probe.variantText ? `${playlistText}\n${probe.variantText}` : playlistText;
+    const info = this.masterPlaylists.get(normalizedUrl);
+    if (info) {
+      info.text = text;
+      info.isLive = isLive;
+    }
 
-    return await this.addDetectedVideo(
-      url,
-      VideoFormat.HLS,
-      probe.variantText ? `${playlistText}\n${probe.variantText}` : playlistText,
-      probe.isLive,
-    );
+    return await this.addDetectedVideo(url, VideoFormat.HLS, text, isLive);
+  }
+
+  /** Liveness of media playlists the page has read, by path (tokens change, the path does not). */
+  private rememberLiveness(normalizedUrl: string, isLive: boolean): void {
+    if (this.variantLiveness.size > 500) this.variantLiveness.clear();
+    this.variantLiveness.set(this.getPathKey(normalizedUrl), isLive);
+  }
+
+  /**
+   * The player read one of a master's variants: whether it is live is now known for sure. Our own
+   * reading of the first variant, when the master was found, may have been refused (403) and
+   * taken as "not live"; then the record button never showed for a live broadcast.
+   */
+  private async updateMasterLiveness(variantUrl: string, isLive: boolean, variantText: string): Promise<void> {
+    const key = this.getPathKey(variantUrl);
+    for (const info of this.masterPlaylists.values()) {
+      if (!info.variantPathKeys.has(key) || info.isLive === isLive || info.text === undefined) continue;
+      info.isLive = isLive;
+      this.onDiagnostic?.(isLive ? "live-from-variant" : "ended-from-variant", info.url, `from ${redactUrl(variantUrl)}`);
+      // The variant also brings its keys, if any: DRM is judged on both.
+      await this.addDetectedVideo(info.url, VideoFormat.HLS, `${info.text}\n${variantText}`, isLive);
+    }
   }
 
   /**
@@ -321,7 +355,9 @@ export class HlsDetectionHandler {
     levels: ReturnType<typeof parseMasterPlaylist>,
   ): Promise<{ isLive: boolean; variantText: string | null }> {
     try {
-      const firstVariant = levels.find((l) => l.type === "stream");
+      // A variant whose text the player already received, if any: it needs no request of ours.
+      const streams = levels.filter((l) => l.type === "stream");
+      const firstVariant = streams.find((l) => this.bodies?.get(l.uri) !== undefined) ?? streams[0];
       if (!firstVariant) return { isLive: false, variantText: null };
       const variantText = this.bodies?.get(firstVariant.uri) ?? (await fetchText(firstVariant.uri, 1));
       return { isLive: !variantText.includes("#EXT-X-ENDLIST"), variantText };
@@ -359,6 +395,8 @@ export class HlsDetectionHandler {
       url,
       variantUrls,
       variantPathKeys,
+      text: undefined,
+      isLive: undefined,
     });
 
     return variantUrls;

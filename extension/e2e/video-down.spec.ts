@@ -571,6 +571,22 @@ test("10 · live HLS: the icon unfolds into download and record; exact copy, tim
   await recorder.close();
 });
 
+test("10b · a live broadcast whose playlist only its player may read: recognised from the player's copy", async ({ page, baseUrl }) => {
+  // The extension's own reading of the quality gets a 403, which used to count as "not live":
+  // no record button for a live broadcast. The player's copy says it is live.
+  await page.goto(`${baseUrl}/live-guarded.html`);
+  await expect(page).toHaveTitle(/reloads: [3-9]/, { timeout: 15_000 });
+  await pointAt(page, hub(page));
+  await expect(recButton(page)).toBeVisible({ timeout: 15_000 });
+});
+
+test("10c · a live broadcast told only by its growing duration (a finite one, as hls.js gives it)", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/live-growing.html`);
+  await expect(page).toHaveTitle(/grown: [3-9]/, { timeout: 15_000 });
+  await pointAt(page, hub(page));
+  await expect(recButton(page)).toBeVisible({ timeout: 10_000 });
+});
+
 for (const [profile, codecs] of [
   ["Best quality", ["h264"]],
   ["Balanced", ["vp9", "h264"]],
@@ -692,6 +708,8 @@ test("4 · YouTube through the native component, saved where Chrome saves (VD_E2
     }
   }
   await openDownload(page);
+  // A whole video on a real MSE player: its duration does not grow, so it is not taken for a live one.
+  await expect(recButton(page)).toBeHidden();
   await expect(menu(page).getByText(/native component/i)).toBeVisible({ timeout: 60_000 });
   await menu(page).getByRole("button", { name: /^144p/ }).click();
   await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });

@@ -7,6 +7,26 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.8 (2026-10-15)
+
+- **Más directos reconocidos, con su botón de grabar.** Desde que el botón de grabar solo sale en
+  directos (0.2.2), algunos directos no lo mostraban:
+  - **Listas que solo atienden al reproductor.** Al encontrar la master de una emisión, la extensión
+    leía su primera calidad para saber si era un directo. Muchos servidores de directos solo responden a
+    su reproductor, y si esa lectura fallaba (403) se daba por hecho que no lo era. Cuando después el
+    reproductor leía la calidad y esta decía que sí, se descartaba por «pertenecer a una master ya
+    conocida». Ahora lo que lee el reproductor manda: si una calidad de la master es un directo, la
+    master pasa a serlo, y la lectura propia empieza por una calidad que el reproductor ya haya leído.
+  - **Duración que crece.** Los reproductores basados en hls.js dan por defecto a un directo una
+    duración finita que crece con cada recarga de la lista. Ahora cuenta como directo un vídeo cuya
+    duración crece más de un segundo dos veces. La de un vídeo entero no cambia una vez conocida.
+  - **Duración enorme.** Algunos reproductores dan al directo una duración gigantesca en lugar de
+    infinita. Más de una semana cuenta como directo.
+- Pruebas: de extremo a extremo, un directo cuya lista solo atiende al reproductor (la lectura de la
+  extensión recibe 403) y un directo sin listas visibles cuya duración crece. Los dos fallan con la
+  0.2.7 (sin botón de grabar). En YouTube real se comprueba también que un vídeo normal no muestra el
+  botón de grabar.
+
 ## 0.2.7 (2026-10-15)
 
 - **Los errores de las páginas ya no aparecen como errores de video-down.** Para ver las listas que lee

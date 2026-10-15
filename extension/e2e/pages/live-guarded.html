@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Live stream, playlist for the player only</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Live stream, playlist for the player only</h1>
+<!-- A live HLS broadcast whose quality playlist only answers the player (it sends a header the
+     server checks), with a finite duration, as hls.js gives a live stream by default. -->
+<video controls muted></video>
+<script type="module">
+  import { msePlayer } from "./player.js";
+  await msePlayer("/liveg/master.m3u8", 30);
+  let reloads = 0;
+  const reload = async () => {
+    const r = await fetch("/liveg/v360.m3u8", { headers: { "x-player": "1" }, cache: "no-store" });
+    if (r.ok) await r.text();
+    document.title = `reloads: ${++reloads}`;
+  };
+  await reload();
+  setInterval(reload, 1000);
+</script>
+</body></html>

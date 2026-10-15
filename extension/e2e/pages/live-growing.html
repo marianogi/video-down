@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Live stream with a growing duration</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Live stream with a growing duration</h1>
+<!-- An MSE player whose playlists the extension never sees: all it shows is a finite duration that
+     grows with each reload, as hls.js does for a live stream by default. -->
+<video controls muted></video>
+<script>
+  const video = document.querySelector("video");
+  const source = new MediaSource();
+  let duration = 20;
+  let grown = 0;
+  source.addEventListener("sourceopen", () => {
+    source.duration = duration;
+    setInterval(() => {
+      duration += 2;
+      source.duration = duration;
+      document.title = `grown: ${++grown}`;
+    }, 700);
+  });
+  video.src = URL.createObjectURL(source);
+</script>
+</body></html>

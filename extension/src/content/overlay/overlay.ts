@@ -94,6 +94,13 @@ interface Tracked {
   ring: HTMLSpanElement;
   firstSeenAt: number;
   loadStartedAt: number;
+  /**
+   * How many times the duration grew by more than a second while this source played. Players
+   * built on MSE (hls.js by default) give a live broadcast a finite duration that grows with each
+   * reload of its playlist; a whole video's duration does not move once known.
+   */
+  durationGrowths: number;
+  lastDuration: number;
   jobs: Map<string, JobView>;
   visible: boolean;
   /** Recording started from this video, while it runs */
@@ -117,6 +124,8 @@ type Choice =
 const MIN_VIDEO_HEIGHT = 60;
 /** How long the pointer must rest on an icon before its choices start loading (ms). */
 const PREFETCH_DELAY_MS = 250;
+/** Times a finite duration must grow (by more than a second each) to count as a live broadcast. */
+const LIVE_GROWTHS = 2;
 /** How often what covers a video, and what it previews, is looked at again (ms). */
 const SIGHT_MS = 300;
 /** Pixels around the icon that still count as over it (a pointer resting on its edge). */
@@ -472,6 +481,8 @@ export class Overlay {
       ring,
       firstSeenAt: Date.now(),
       loadStartedAt: 0,
+      durationGrowths: 0,
+      lastDuration: NaN,
       jobs: new Map(),
       visible: false,
       recording: null,
@@ -492,8 +503,18 @@ export class Overlay {
     const onLoadStart = () => {
       const previous = this.mediaFor(tr);
       tr.loadStartedAt = Date.now();
+      tr.durationGrowths = 0;
+      tr.lastDuration = NaN;
       this.deps.onVideoLoad(previous);
     };
+    video.addEventListener("durationchange", () => {
+      const d = video.duration;
+      if (Number.isFinite(d) && tr.lastDuration > 0 && d > tr.lastDuration + 1) {
+        tr.durationGrowths++;
+        if (tr.durationGrowths === LIVE_GROWTHS) this.scheduleLayout();
+      }
+      if (Number.isFinite(d)) tr.lastDuration = d;
+    });
     video.addEventListener("loadstart", onLoadStart);
     video.addEventListener("emptied", onLoadStart);
     video.addEventListener("video-down:drm", () => {
@@ -713,7 +734,11 @@ export class Overlay {
   private canRecord(tr: Tracked): boolean {
     if (tr.recording) return true;
     if (tr.video.getAttribute(DRM_ATTR) || (tr.lock ? tr.lock.previewOf : this.previewOf(tr))) return false;
-    return isLiveElement(tr.video) || this.mediaFor(tr).some((m) => m.isLive && !m.hasDrm);
+    return (
+      isLiveElement(tr.video) ||
+      tr.durationGrowths >= LIVE_GROWTHS ||
+      this.mediaFor(tr).some((m) => m.isLive && !m.hasDrm)
+    );
   }
 
   private setExpanded(tr: Tracked, on: boolean, focusDownload = false): void {

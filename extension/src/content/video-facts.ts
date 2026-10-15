@@ -132,9 +132,12 @@ export function isOutOfSight(video: HTMLVideoElement, skip?: Element): boolean {
   return looked > 0;
 }
 
+/** Longer than any whole video: some players give a live broadcast a huge duration instead of Infinity. */
+const LIVE_DURATION_S = 7 * 24 * 3600;
+
 /** A live broadcast: an unbounded timeline, as players give to live streams and to MediaStreams. */
 export function isLiveElement(video: HTMLVideoElement): boolean {
-  return video.duration === Infinity;
+  return video.duration === Infinity || video.duration > LIVE_DURATION_S;
 }
 
 export function readFacts(video: HTMLVideoElement, loadStartedAt: number, firstSeenAt: number): VideoFacts {
