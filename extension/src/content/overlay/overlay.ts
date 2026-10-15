@@ -15,6 +15,7 @@ import { route, type Route, type RouteInput, type DirectSource } from "../../cor
 import { permalinkNear } from "../permalinks";
 import { bindMedia } from "../../core/binding";
 import { readFacts, pageTitle, DRM_ATTR, isLiveElement, isOutOfSight, previewTarget } from "../video-facts";
+import type { FrameUi, UiRect } from "../frame-relay";
 import {
   MessageType,
   type DownloadRequestPayload,
@@ -49,6 +50,8 @@ export interface OverlayDeps {
   onVideoLoad(previous: VideoMetadata[]): void;
   /** Note for the diagnostic report */
   note?(event: string, url?: string, detail?: string): void;
+  /** Where the icons and the menu are now (see frame-relay.ts); only set inside an iframe */
+  onUi?(ui: FrameUi): void;
 }
 
 interface JobView {
@@ -312,6 +315,12 @@ export class Overlay {
       const next = route(this.routeInput(tr));
       if (next.kind !== "manifest" || next.media.url !== r.media.url) void this.renderRoute(tr);
     }
+  }
+
+  /** The parent page says the pointer went over it, out of this frame (see frame-relay.ts). */
+  onPointerLeft(): void {
+    this.pointer = { x: -1, y: -1 };
+    this.scheduleLayout();
   }
 
   /** Called when the page navigates inside a single-page app. */
@@ -669,6 +678,26 @@ export class Overlay {
       tr.recButton.classList.toggle("vd-hot", hot || !!tr.recording);
     }
     if (this.openKey) this.positionPopover();
+    this.reportUi();
+  }
+
+  /** Tell the parent frame where the icons and the menu are, so it can uncover them (frame-relay.ts). */
+  private reportUi(): void {
+    if (!this.deps.onUi) return;
+    const rects: UiRect[] = [];
+    const add = (el: HTMLElement, margin: number) => {
+      if (el.hidden || el.style.display === "none") return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return;
+      rects.push({ left: r.left - margin, top: r.top - margin, width: r.width + 2 * margin, height: r.height + 2 * margin });
+    };
+    for (const tr of this.tracked.values()) {
+      if (!tr.visible) continue;
+      for (const b of [tr.hub, tr.trigger, tr.recButton]) add(b, HOVER_MARGIN);
+    }
+    if (this.openKey) add(this.popover, 0);
+    const hover = [...this.tracked.values()].some((tr) => tr.pointerInside);
+    this.deps.onUi({ rects, hover, menu: this.openKey !== null });
   }
 
   private positionPopover(): void {
@@ -688,6 +717,7 @@ export class Overlay {
     if (top + ph > vh - 8) top = Math.max(8, b.top - ph - 6);
     this.popover.style.left = `${left}px`;
     this.popover.style.top = `${top}px`;
+    this.reportUi();
   }
 
   private updateRing(tr: Tracked): void {

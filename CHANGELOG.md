@@ -7,6 +7,27 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.9 (2026-10-16)
+
+- **Reproductores tapados por una capa transparente.** Muchas webs ponen una capa invisible encima del
+  reproductor incrustado, para cazar el primer clic con un anuncio o para gestionar ellas los clics. El
+  ratón no llegaba nunca al iframe del reproductor: el icono de video-down se veía, pero no se
+  desplegaba ni se podía pulsar. Ahora el iframe le dice a la página dónde están su icono y su menú, y
+  la página deja pasar el ratón por esa capa solo mientras está sobre ellos. Al apartarse y con el menú
+  cerrado, la capa vuelve a ser de la página. Si el ratón sale del iframe de golpe, la página se lo
+  dice al iframe para que el icono se pliegue.
+- **Listas en directo disfrazadas.** Hay CDN de directos que sirven la lista sin extensión y como
+  `text/html`. La extensión no miraba las respuestas `text/html` ni JSON, y no veía la lista. Ahora las
+  mira también: si empiezan como una lista HLS o DASH se reconocen, y si no se dejan en el primer
+  trozo, como cualquier otra respuesta. Con la lista reconocida, el directo ofrece también la copia
+  exacta (sin recodificar), además de la captura del reproductor.
+- Comprobado en la web de deportes del usuario: el icono se despliega en descargar y grabar, y el menú
+  de grabar ofrece la copia exacta del directo y la captura.
+- Pruebas: de extremo a extremo, un reproductor en un iframe tapado por una capa transparente (el icono
+  se despliega, el menú se abre, la capa no recibe el clic y vuelve a ser de la página al irse) y un
+  directo cuya lista se sirve como `text/html` sin extensión (botón de grabar y copia exacta). Las dos
+  fallan con la 0.2.8.
+
 ## 0.2.8 (2026-10-15)
 
 - **Más directos reconocidos, con su botón de grabar.** Desde que el botón de grabar solo sale en

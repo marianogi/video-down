@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Embedded player under a transparent layer</title>
+<style>
+  body { margin: 40px; font-family: sans-serif; }
+  .wrap { position: relative; width: 680px; height: 400px; }
+  iframe { width: 680px; height: 400px; border: 0; display: block; }
+  #cover { position: absolute; inset: 0; z-index: 1; }
+</style>
+</head><body><h1>Embedded player under a transparent layer</h1>
+<!-- Served from http://localhost:PORT, the player from http://127.0.0.1:PORT. Like many sites,
+     an empty transparent layer over the player catches the clicks (for an ad, say). -->
+<div class="wrap">
+  <iframe id="player" allow="autoplay; fullscreen"></iframe>
+  <div id="cover"></div>
+</div>
+<script>
+  window.coverClicks = 0;
+  document.getElementById("cover").addEventListener("click", () => window.coverClicks++);
+  document.getElementById("player").src = `http://127.0.0.1:${location.port}/direct.html`;
+</script>
+</body></html>

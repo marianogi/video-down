@@ -172,13 +172,17 @@
     document.dispatchEvent(new CustomEvent("video-down:manifest", { detail: JSON.stringify(detail) }));
   }
 
-  /** Bodies worth a look: playlists by type, or small text that says nothing about itself. */
+  /**
+   * Bodies worth a look: playlists by type, or small text whatever its type says. Some live CDNs
+   * serve their playlists as text/html or JSON, with no extension, to hide them; anything that
+   * does not start like a playlist is dropped after its first bytes anyway.
+   */
   function worthSniffing(contentType: string | null, length: string | null): boolean {
     const ct = (contentType || "").toLowerCase();
     const n = Number(length);
     if (Number.isFinite(n) && n > MAX_TEXT) return false;
     if (/mpegurl|dash\+xml/.test(ct)) return true;
-    return !/^(video|audio|image|font)\/|json|javascript|css|html|protobuf|grpc|wasm/.test(ct);
+    return !/^(video|audio|image|font)\/|javascript|css|protobuf|grpc|wasm/.test(ct);
   }
 
   /**

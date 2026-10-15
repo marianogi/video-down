@@ -12,6 +12,8 @@
 //                        2 s per segment, looping over fixtures/media/live with a discontinuity
 //   /liveg/…             the same live stream, but its playlist (/liveg/v360.m3u8) only answers the
 //                        player, which sends "x-player: 1" (403 otherwise), as many live CDNs do
+//   /htmllive/stream     the same live playlist, without extension and served as text/html, as some
+//                        live CDNs hide it
 //   /session/…           only with the cookie vdsession=ok (403 otherwise), like a site behind a
 //                        login: post.html is a post page with its video, clip.mp4 that video
 //   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc, and the
@@ -91,8 +93,12 @@ export function startServer(port = 0) {
       }
       usedTokens.add(token);
       pathname = "/media/hls/master.m3u8";
-    } else if (pathname.startsWith("/live/") || pathname.startsWith("/liveg/")) {
+    } else if (pathname === "/htmllive/stream") {
+      res.writeHead(200, { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8" }).end(livePlaylist());
+      return;
+    } else if (pathname.startsWith("/live/") || pathname.startsWith("/liveg/") || pathname.startsWith("/htmllive/seg/")) {
       const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
+      pathname = pathname.replace(/^\/htmllive\//, "/live/");
       const guarded = pathname.startsWith("/liveg/");
       pathname = pathname.replace(/^\/liveg\//, "/live/");
       if (guarded && pathname === "/live/v360.m3u8" && req.headers["x-player"] !== "1") {

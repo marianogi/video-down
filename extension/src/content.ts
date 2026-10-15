@@ -14,6 +14,7 @@ import { PlaylistBodies } from "./core/detection/playlist-bodies";
 import { normalizeUrl } from "./core/utils/url-utils";
 import { loadSettings } from "./core/storage/settings";
 import { Overlay } from "./content/overlay/overlay";
+import { CoverLifter, FRAME_UI_KEY, POINTER_LEFT_KEY, sanitizeFrameUi, uiReporter } from "./content/frame-relay";
 import type { DetectionFailure } from "./core/detection/detection-failure";
 
 const FLAG = "__videoDownContent";
@@ -190,6 +191,24 @@ async function main(): Promise<void> {
     });
   });
 
+  // A child frame's icons that this page may cover (see content/frame-relay.ts). The lifter is
+  // only created once some child frame has icons.
+  let coverLifter: CoverLifter | null = null;
+  window.addEventListener("message", (event) => {
+    const data: unknown = event.data;
+    if (typeof data !== "object" || data === null) return;
+    if (POINTER_LEFT_KEY in data) {
+      if (event.source === window.parent && window.parent !== window) overlay?.onPointerLeft();
+      return;
+    }
+    if (!(FRAME_UI_KEY in data)) return;
+    const source = event.source as Window | null;
+    const ui = sanitizeFrameUi((data as Record<string, unknown>)[FRAME_UI_KEY]);
+    if (!source || !ui || (!coverLifter && ui.rects.length === 0)) return;
+    coverLifter ??= new CoverLifter();
+    coverLifter.onChildUi(source, ui);
+  });
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === MessageType.NETWORK_URL_DETECTED) {
       const { url, formatHint } = message.payload ?? {};
@@ -280,6 +299,8 @@ async function main(): Promise<void> {
         note: diag,
         isNativeAvailable,
         minVideoWidth: settings?.minVideoWidth ?? 120,
+        // Inside an iframe, the parent may cover the icons: tell it where they are.
+        ...(window.parent !== window ? { onUi: uiReporter(window.parent) } : {}),
       });
       overlay.start();
     };

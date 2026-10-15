@@ -256,6 +256,30 @@ test("2e · player in a cross-origin iframe whose CDN demands the player's Refer
   await downloadAndCheck(m, downloads, /360p/, { height: 360 });
 });
 
+test("2n · a player in an iframe the page covers with a transparent layer: its icon still unfolds and opens", async ({ page, baseUrl }) => {
+  // Many sites lay an invisible layer over an embedded player to catch the first click for an ad.
+  // The pointer never reached the iframe: the icon could be seen, not hovered nor clicked.
+  await page.goto(`http://localhost:${new URL(baseUrl).port}/covered-embed.html`);
+  const overlay = page.frameLocator("#player").locator("video-down-overlay");
+  const icon = overlay.getByRole("button", { name: /^video-down: / });
+  await expect(icon).toBeVisible({ timeout: 10_000 });
+  // Onto the icon and a little further, as a person moves the mouse: the first move reaches the
+  // page (its layer is lifted then), the next ones the player's frame.
+  const box = (await icon.boundingBox())!;
+  for (const d of [0, 2, 4]) await page.mouse.move(box.x + 12 + d, box.y + 12 + d);
+  await expect(overlay.getByRole("button", { name: /Download this video/ })).toBeVisible({ timeout: 5000 });
+  await overlay.getByRole("button", { name: /Download this video/ }).click();
+  await expect(overlay.getByRole("dialog").getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  expect(await page.evaluate(() => (window as unknown as { coverClicks: number }).coverClicks)).toBe(0);
+  // Away from the icon and with the menu closed, the layer is the page's again.
+  await page.keyboard.press("Escape");
+  await page.mouse.move(5, 5);
+  await expect.poll(() => page.locator("#cover").evaluate((el) => getComputedStyle(el).pointerEvents), { timeout: 5000 }).toBe("auto");
+  const cover = (await page.locator("#cover").boundingBox())!;
+  await page.mouse.click(cover.x + cover.width / 2, cover.y + cover.height - 20);
+  expect(await page.evaluate(() => (window as unknown as { coverClicks: number }).coverClicks)).toBe(1);
+});
+
 test("2f · same, with variants and segments on another host that also checks the Referer", async ({ page, baseUrl, downloads }) => {
   await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html?player=player-cross.html`);
   const overlay = page.frameLocator("#player").locator("video-down-overlay");
@@ -578,6 +602,15 @@ test("10b · a live broadcast whose playlist only its player may read: recognise
   await expect(page).toHaveTitle(/reloads: [3-9]/, { timeout: 15_000 });
   await pointAt(page, hub(page));
   await expect(recButton(page)).toBeVisible({ timeout: 15_000 });
+});
+
+test("10d · a live playlist served as text/html without extension: recognised, and copied exactly", async ({ page, baseUrl }) => {
+  // Some live CDNs hide their playlist this way; the extension did not read text/html bodies.
+  await page.goto(`${baseUrl}/live-html.html`);
+  await expect(page).toHaveTitle(/reloads: [3-9]/, { timeout: 15_000 });
+  await openRecord(page);
+  // A lone media playlist (no master): its only quality, copied as it comes.
+  await expect(menu(page).getByRole("button", { name: /Original file/ })).toBeVisible({ timeout: 20_000 });
 });
 
 test("10c · a live broadcast told only by its growing duration (a finite one, as hls.js gives it)", async ({ page, baseUrl }) => {

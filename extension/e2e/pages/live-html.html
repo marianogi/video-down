@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Live stream, playlist served as text/html</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>Live stream, playlist served as text/html</h1>
+<!-- A live HLS playlist with no extension, served as text/html (as some live CDNs hide it), and a
+     finite duration that does not move: only the playlist tells it is live. -->
+<video controls muted></video>
+<script type="module">
+  import { msePlayer } from "./player.js";
+  await msePlayer(null, 30);
+  let reloads = 0;
+  const reload = async () => {
+    const r = await fetch("/htmllive/stream", { cache: "no-store" });
+    if (r.ok) await r.text();
+    document.title = `reloads: ${++reloads}`;
+  };
+  await reload();
+  setInterval(reload, 1000);
+</script>
+</body></html>
