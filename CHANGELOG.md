@@ -7,6 +7,17 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.6 (2026-10-15)
+
+- **El icono ya no se queda en una previsualización tras cerrar el menú sin descargar.** En la 0.2.5,
+  el icono se quedaba quieto mientras el ratón estaba sobre él, pero se soltaba al plegarse. Al cerrar
+  el menú con la × o con Escape, el foco vuelve al botón de descarga y el icono no se pliega, así que
+  seguía retenido. Como YouTube usa un solo reproductor para todas sus previsualizaciones, el icono se
+  quedaba en la miniatura donde se abrió el menú y las demás previsualizaciones aparecían sin icono.
+  Ahora el icono solo se retiene mientras el ratón está sobre él o su menú está abierto.
+- Pruebas: de extremo a extremo, un menú cerrado con la × sin descargar y el reproductor compartido
+  pasando a otra miniatura: el icono va con él y solo hay uno. Falla con la 0.2.5.
+
 ## 0.2.5 (2026-10-15)
 
 - **El icono ya no parpadea sobre las previsualizaciones de YouTube.** El icono de video-down no forma

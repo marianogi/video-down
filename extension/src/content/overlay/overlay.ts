@@ -564,23 +564,41 @@ export class Overlay {
         style.visibility !== "hidden" &&
         style.display !== "none" &&
         !this.outOfSight(tr);
+      const pointerOn = (x: number, y: number) => {
+        const width = tr.expanded && this.canRecord(tr) ? 74 : 34;
+        return (
+          this.pointer.x >= x - HOVER_MARGIN &&
+          this.pointer.x <= x + width + HOVER_MARGIN &&
+          this.pointer.y >= y - HOVER_MARGIN &&
+          this.pointer.y <= y + 34 + HOVER_MARGIN
+        );
+      };
+      // The lock lasts while the pointer is on the icon (or its menu is open), nothing else: not
+      // while the icon keeps the focus after its menu was closed, or it stayed on a thumbnail the
+      // site's shared preview player had already left.
+      if (tr.lock && this.openKey !== tr.key && !pointerOn(tr.lock.left - window.scrollX, tr.lock.top - window.scrollY)) {
+        tr.lock = null;
+        // A player taken away while the pointer was on its icon can be forgotten now.
+        this.scheduleScan();
+      }
       tr.visible = visible || this.openKey === tr.key || !!tr.lock;
       if (!tr.visible) {
         tr.hub.style.display = "none";
         tr.trigger.style.display = "none";
         tr.recButton.style.display = "none";
+        if (tr.pointerInside) {
+          tr.pointerInside = false;
+          if (tr.prefetchTimer) clearTimeout(tr.prefetchTimer);
+          tr.prefetchTimer = null;
+          this.scheduleCollapse(tr);
+        }
         continue;
       }
       const left = tr.lock ? tr.lock.left - window.scrollX : Math.min(Math.max(r.left, 0) + OFFSET, vw - 82);
       const top = tr.lock ? tr.lock.top - window.scrollY : Math.min(Math.max(r.top, 0) + OFFSET, vh - 42);
       const canRecord = this.canRecord(tr);
       // Pointer over the icon (or, unfolded, over its buttons): unfold; once it leaves, fold back.
-      const width = tr.expanded && canRecord ? 74 : 34;
-      const inside =
-        this.pointer.x >= left - HOVER_MARGIN &&
-        this.pointer.x <= left + width + HOVER_MARGIN &&
-        this.pointer.y >= top - HOVER_MARGIN &&
-        this.pointer.y <= top + 34 + HOVER_MARGIN;
+      const inside = pointerOn(left, top);
       if (inside) {
         if (!tr.lock) {
           tr.lock = {
@@ -701,11 +719,6 @@ export class Overlay {
   private setExpanded(tr: Tracked, on: boolean, focusDownload = false): void {
     if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
     tr.collapseTimer = null;
-    if (!on && this.openKey !== tr.key && tr.lock) {
-      tr.lock = null;
-      // A player taken away while the pointer was on its icon can be forgotten now.
-      this.scheduleScan();
-    }
     if (tr.expanded !== on) {
       tr.expanded = on;
       tr.hub.setAttribute("aria-expanded", String(on));
@@ -763,6 +776,8 @@ export class Overlay {
     if (this.pendingRetry) clearTimeout(this.pendingRetry);
     this.popover.hidden = true;
     this.popover.replaceChildren();
+    // The icon may have been held where the menu opened: put it back with its video, unless the pointer is on it.
+    this.scheduleLayout();
     if (tr) {
       tr.trigger.setAttribute("aria-expanded", "false");
       tr.recButton.setAttribute("aria-expanded", "false");

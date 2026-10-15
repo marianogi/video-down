@@ -485,6 +485,38 @@ test("12g · resting the pointer on the icon starts looking for the choices: the
   expect(await heads()).toBe(before + 1);
 });
 
+test("12h · a menu closed without downloading: the icon goes on with the shared preview player", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/shared-preview.html`);
+  const a = (await page.locator("#a").boundingBox())!;
+  const b = (await page.locator("#b").boundingBox())!;
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await openDownload(page);
+  await expect(menu(page)).toBeVisible();
+  // Closed with its × (or Escape): the focus goes back to the icon's download button.
+  await menu(page).getByRole("button", { name: "Close" }).click();
+  await expect(menu(page)).toBeHidden();
+  // The site moves its one preview player to the other thumbnail: the icon must go with it, not
+  // stay held where the menu was.
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  const icon = page.locator("video-down-overlay").getByRole("button", { name: /^video-down: |Download this video/ });
+  await expect
+    .poll(async () => {
+      for (const button of await icon.all()) {
+        if (await button.isVisible()) return Math.round(((await button.boundingBox())?.x ?? 0) - b.x);
+      }
+      return null;
+    }, { timeout: 5000 })
+    .toBe(8);
+  await page.keyboard.press("Escape");
+  for (const [x, y] of [[a.x + a.width / 2, a.y + a.height / 2], [b.x + b.width / 2, b.y + b.height / 2]]) {
+    await page.mouse.move(x!, y!);
+    await page.waitForTimeout(500);
+    const visible = [];
+    for (const button of await icon.all()) if (await button.isVisible()) visible.push(await button.boundingBox());
+    expect(visible).toHaveLength(1);
+  }
+});
+
 // ---------------------------------------------------------------- recording
 
 /** The recorder page: wait for something recorded, stop, save, and check the file with ffprobe. */
