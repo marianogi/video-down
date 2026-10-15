@@ -635,6 +635,28 @@ test("5 · blob video with no manifest: no browser download is offered", async (
   ).toBeVisible({ timeout: 30_000 });
 });
 
+test("the page's own failures stay its own: none is reported at the extension's scripts", async ({ page, baseUrl }) => {
+  // Chrome blames an uncaught error on the script at the top of its stack. The extension's
+  // wrappers of fetch, XHR, history and EME used to be there, so failures of the page itself
+  // (a request blocked by an ad blocker…) were listed as errors of video-down.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Runtime.enable");
+  const errors: string[] = [];
+  cdp.on("Runtime.exceptionThrown", (e) => {
+    const d = e.exceptionDetails;
+    const frames = (d.stackTrace?.callFrames ?? []).map((f) => f.url);
+    errors.push(`${(d.exception?.description ?? d.text).split("\n")[0]} | at ${d.url ?? ""} | ${frames.join(" ")}`);
+  });
+  // Blocked the way an ad blocker blocks it.
+  await page.route("**/ads/**", (route) => route.abort("blockedbyclient"));
+  await page.goto(`${baseUrl}/page-errors.html`);
+  await expect(page).toHaveTitle("done: fetch ok, xhr ok, push ok", { timeout: 10_000 });
+  await page.waitForTimeout(500);
+  expect(errors.length, errors.join("\n")).toBeGreaterThanOrEqual(4);
+  for (const error of errors) expect(error).not.toContain("chrome-extension://");
+  await cdp.detach();
+});
+
 test("tiny decorative videos get no icon", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/tiny.html`);
   await page.waitForTimeout(1500);

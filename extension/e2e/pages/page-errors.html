@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Page with its own failures</title></head>
+<body><h1>Page with its own failures</h1><video id="v"></video>
+<!-- Mistakes and failures of the page itself, none of them handled: a request that cannot connect
+     (like one blocked by an ad blocker), a second send(), a cross-origin pushState and a wrong
+     setMediaKeys. Chrome reports each one; none may be reported at the extension's scripts. -->
+<script>
+  const steps = [];
+  fetch("/ads/blocked.js").then((r) => r.text());
+  setTimeout(() => { const x = new XMLHttpRequest(); x.open("GET", "/media/hls/master.m3u8"); x.send(); x.send(); }, 50);
+  setTimeout(() => history.pushState({}, "", "http://other.invalid/"), 100);
+  setTimeout(() => document.getElementById("v").setMediaKeys("not keys"), 150);
+  // What still has to work as before.
+  setTimeout(async () => {
+    const text = await (await fetch("/media/hls/master.m3u8")).text();
+    steps.push(text.startsWith("#EXTM3U") ? "fetch ok" : "fetch bad");
+    class Sub extends XMLHttpRequest {}
+    const y = new Sub();
+    y.open("GET", "/media/hls/master.m3u8");
+    y.onload = () => {
+      steps.push(y instanceof XMLHttpRequest && y.responseText.startsWith("#EXTM3U") ? "xhr ok" : "xhr bad");
+      history.pushState({}, "", "?moved=1");
+      steps.push(location.search === "?moved=1" ? "push ok" : "push bad");
+      document.title = "done: " + steps.join(", ");
+    };
+    y.send();
+  }, 300);
+</script>
+</body></html>

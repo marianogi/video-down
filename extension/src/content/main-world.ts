@@ -19,6 +19,13 @@
  *
  * Wrappers are Proxies so `Function.prototype.toString` still reports native
  * code and pages that inspect these APIs keep working.
+ *
+ * None of this script's functions may be on the stack when the page's own call fails: Chrome
+ * blames an uncaught error on the script at the top of its stack, so a request the page lets
+ * fail unhandled (one blocked by an ad blocker, say) or a page's wrong call showed up as an
+ * error of video-down. Hence: promise-returning APIs are called through `later`, XHR is
+ * observed from its constructor (the page calls open/send directly), and address changes come
+ * from the Navigation API instead of wrapping pushState/replaceState.
  */
 
 (() => {
@@ -26,6 +33,39 @@
   const w = window as unknown as Record<string, unknown>;
   if (w[FLAG]) return;
   w[FLAG] = true;
+
+  // Taken now, before any page script can replace them.
+  const reflectApply = Reflect.apply;
+  const bind = Function.prototype.bind;
+  const fnApply = Function.prototype.apply;
+  const promiseThen = Promise.prototype.then;
+  const settled = Promise.resolve();
+  const noop = () => undefined;
+
+  /**
+   * `target.apply(thisArg, args)`, one microtask later, called by native functions only (a bound
+   * `Function.prototype.apply` run from the microtask queue), so a failure carries the page's
+   * stack and not this script's. Only for APIs that return a promise: their result and their
+   * errors already arrive asynchronously, so the page sees no difference.
+   */
+  function later<T>(target: unknown, thisArg: unknown, args: unknown[]): Promise<T> {
+    const call = reflectApply(bind, fnApply, [target, thisArg, args]) as () => T;
+    return reflectApply(promiseThen, settled, [call]) as Promise<T>;
+  }
+
+  /** Watch a promise without changing it, ignoring its failure (the page handles it, or not). */
+  function watch<T>(promise: Promise<T>, onValue: (value: T) => void): void {
+    reflectApply(promiseThen, promise, [
+      (value: T) => {
+        try {
+          onValue(value);
+        } catch {
+          // never break the page
+        }
+      },
+      noop,
+    ]);
+  }
 
   // ------------------------------------------------------------------ DRM (EME)
 
@@ -51,15 +91,10 @@
     if (access && typeof access.createMediaKeys === "function") {
       access.createMediaKeys = new Proxy(access.createMediaKeys, {
         apply(target, thisArg: MediaKeySystemAccess, args) {
-          const result = Reflect.apply(target, thisArg, args) as Promise<MediaKeys>;
-          return result.then((mediaKeys) => {
-            try {
-              keySystems.set(mediaKeys, thisArg.keySystem);
-            } catch {
-              // ignore
-            }
-            return mediaKeys;
-          });
+          const result = later<MediaKeys>(target, thisArg, args);
+          // Watched before the page gets the promise, so this runs before its own code does.
+          watch(result, (mediaKeys) => keySystems.set(mediaKeys, thisArg.keySystem));
+          return result;
         },
       });
     }
@@ -75,7 +110,7 @@
         apply(target, thisArg: HTMLMediaElement, args: [MediaKeys | null]) {
           const mediaKeys = args[0];
           if (mediaKeys) mark(thisArg, keySystems.get(mediaKeys) ?? "EME");
-          return Reflect.apply(target, thisArg, args);
+          return later(target, thisArg, args);
         },
       });
     }
@@ -96,6 +131,8 @@
   // Single-page apps change the address with the History API and load the next video at once.
   // The extension polls the address, which notices the change up to a second late; this event
   // tells it at the moment it happens. (A page faking it only resets its own list of videos.)
+  // The Navigation API reports pushState and replaceState too, already with the new address,
+  // without wrapping them.
   const navigated = () => {
     try {
       document.dispatchEvent(new CustomEvent("video-down:navigation"));
@@ -104,16 +141,8 @@
     }
   };
   try {
-    for (const name of ["pushState", "replaceState"] as const) {
-      const proto = History.prototype;
-      proto[name] = new Proxy(proto[name], {
-        apply(target, thisArg, args) {
-          const result = Reflect.apply(target, thisArg, args);
-          navigated();
-          return result;
-        },
-      });
-    }
+    const navigation = (window as unknown as { navigation?: EventTarget }).navigation;
+    navigation?.addEventListener("currententrychange", navigated);
     window.addEventListener("popstate", navigated);
     window.addEventListener("hashchange", navigated);
   } catch {
@@ -158,12 +187,13 @@
    * buffered. A playlist is read to the end (up to MAX_TEXT).
    */
   async function readCopy(response: Response): Promise<void> {
-    const reader = response.clone().body?.getReader();
-    if (!reader) return;
     const decoder = new TextDecoder();
     let text = "";
     let checked = false;
     try {
+      // The page may have read the body already (another wrapper of fetch did): then clone() throws.
+      const reader = response.clone().body?.getReader();
+      if (!reader) return;
       for (;;) {
         const { value, done } = await reader.read();
         if (value) text += decoder.decode(value, { stream: true });
@@ -192,13 +222,11 @@
     const originalFetch = window.fetch;
     window.fetch = new Proxy(originalFetch, {
       apply(target, thisArg, args: Parameters<typeof fetch>) {
-        const promise = Reflect.apply(target, thisArg, args) as Promise<Response>;
-        promise
-          .then((response) => {
-            if (!response.ok || !worthSniffing(response.headers.get("content-type"), response.headers.get("content-length"))) return;
-            void readCopy(response);
-          })
-          .catch(() => undefined);
+        const promise = later<Response>(target, thisArg, args);
+        watch(promise, (response) => {
+          if (!response.ok || !worthSniffing(response.headers.get("content-type"), response.headers.get("content-length"))) return;
+          void readCopy(response);
+        });
         return promise;
       },
     });
@@ -206,29 +234,39 @@
     // ignore
   }
 
+  function sniffXhr(xhr: XMLHttpRequest): void {
+    try {
+      if (xhr.status < 200 || xhr.status >= 300) return;
+      if (!worthSniffing(xhr.getResponseHeader("content-type"), xhr.getResponseHeader("content-length"))) return;
+      const type = xhr.responseType;
+      if (type === "" || type === "text") {
+        report(xhr.responseURL, xhr.responseText, true);
+      } else if (type === "arraybuffer" && xhr.response instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(xhr.response);
+        if (bytes.byteLength > MAX_TEXT) return;
+        const decoder = new TextDecoder();
+        if (!kindOf(decoder.decode(bytes.subarray(0, 512)))) return;
+        report(xhr.responseURL, decoder.decode(bytes), true);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Each request is watched from the moment it is created; the page calls open() and send()
+  // themselves, so their errors (a second send(), a blocked synchronous request) stay its own.
+  // `prototype`, constants and `instanceof` reach the real constructor through the Proxy, and
+  // subclasses of XMLHttpRequest get here through super().
   try {
-    const proto = XMLHttpRequest.prototype;
-    proto.send = new Proxy(proto.send, {
-      apply(target, thisArg: XMLHttpRequest, args) {
-        thisArg.addEventListener("load", () => {
-          try {
-            if (thisArg.status < 200 || thisArg.status >= 300) return;
-            if (!worthSniffing(thisArg.getResponseHeader("content-type"), thisArg.getResponseHeader("content-length"))) return;
-            const type = thisArg.responseType;
-            if (type === "" || type === "text") {
-              report(thisArg.responseURL, thisArg.responseText, true);
-            } else if (type === "arraybuffer" && thisArg.response instanceof ArrayBuffer) {
-              const bytes = new Uint8Array(thisArg.response);
-              if (bytes.byteLength > MAX_TEXT) return;
-              const decoder = new TextDecoder();
-              if (!kindOf(decoder.decode(bytes.subarray(0, 512)))) return;
-              report(thisArg.responseURL, decoder.decode(bytes), true);
-            }
-          } catch {
-            // ignore
-          }
-        });
-        return Reflect.apply(target, thisArg, args);
+    window.XMLHttpRequest = new Proxy(XMLHttpRequest, {
+      construct(target, args, newTarget) {
+        const xhr = Reflect.construct(target, args, newTarget) as XMLHttpRequest;
+        try {
+          xhr.addEventListener("load", () => sniffXhr(xhr));
+        } catch {
+          // ignore
+        }
+        return xhr;
       },
     });
   } catch {

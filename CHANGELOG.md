@@ -7,6 +7,31 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.7 (2026-10-15)
+
+- **Los errores de las páginas ya no aparecen como errores de video-down.** Para ver las listas que lee
+  el reproductor y los cambios de dirección, la extensión envuelve en la página `fetch`,
+  `XMLHttpRequest`, `history.pushState` y `setMediaKeys`. Chrome atribuye un error sin atender al script
+  que está en lo alto de la pila, y ese envoltorio estaba siempre ahí. Así, cuando fallaba una petición
+  propia de la página que esta no atendía (una bloqueada por un bloqueador de anuncios, por ejemplo), o
+  cuando la página llamaba mal a esas funciones, `chrome://extensions` lo listaba como error de
+  video-down en `main-world.js` (por ejemplo, `TypeError: Failed to fetch`). Ahora:
+  - `fetch`, `createMediaKeys` y `setMediaKeys` se llaman un instante después, solo a través de
+    funciones nativas, así que ninguna función de la extensión queda en la pila;
+  - `XMLHttpRequest` se vigila desde que se crea el objeto: la página llama ella misma a `open` y `send`;
+  - los cambios de dirección se reciben con la API Navigation, sin envolver `pushState` ni
+    `replaceState`.
+
+  Los errores siguen saliendo en la consola, pero atribuidos a la página, que es de quien son. Lo que
+  la página recibe no cambia.
+- Si la página ya había leído la respuesta cuando la extensión iba a copiarla, la copia fallaba con un
+  error sin atender. Ahora se descarta en silencio.
+- Pruebas: de extremo a extremo, una página con una petición bloqueada como lo haría un bloqueador de
+  anuncios, un segundo `send()`, un `pushState` a otro origen y un `setMediaKeys` erróneo, ninguno
+  atendido. Ningún error debe aparecer atribuido a la extensión, y la página tiene que seguir leyendo sus
+  respuestas, también con una subclase de `XMLHttpRequest`. Con la 0.2.6 falla (`TypeError: Failed to
+  fetch` en `main-world.js`).
+
 ## 0.2.6 (2026-10-15)
 
 - **El icono ya no se queda en una previsualización tras cerrar el menú sin descargar.** En la 0.2.5,
