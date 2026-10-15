@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { route, youtubeWatchUrl, isManifestUrl, BLOB_GRACE_MS, type RouteInput } from "../src/core/router";
@@ -7,6 +7,9 @@ import { hlsVariants, dashVariants } from "../src/core/variants";
 import { detectHlsDrm, detectDashDrm, canDecrypt } from "../src/core/utils/drm-utils";
 import { resolveSettings } from "../src/core/storage/settings";
 import { VideoFormat, type VideoMetadata } from "../src/core/types";
+import { t, useBundledMessages } from "../src/shared/i18n";
+import enMessages from "../public/_locales/en/messages.json";
+import esMessages from "../public/_locales/es/messages.json";
 
 const fixture = (name: string) => readFileSync(resolve(__dirname, "fixtures", name), "utf8");
 
@@ -534,5 +537,27 @@ describe("site session for yt-dlp", () => {
     expect(toSessionCookie({ ...base, value: `a${String.fromCharCode(10)}b` })).toBeNull();
     expect(toSessionCookie({ ...base, name: "bad name" })).toBeNull();
     expect(toSessionCookie({ ...base, value: "x".repeat(5000) })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- texts when Chrome gives a page none
+
+describe("texts of the extension's own pages", () => {
+  it("come from the bundled catalog, in the browser's language, when chrome.i18n answers nothing", () => {
+    useBundledMessages({ en: enMessages, es: esMessages });
+    try {
+      vi.stubGlobal("chrome", { i18n: { getMessage: () => "", getUILanguage: () => "es-ES" } });
+      expect(t("recStateRecording")).toBe("Grabando");
+      expect(t("fileN", "2")).toBe("Fichero 2");
+      vi.stubGlobal("chrome", { i18n: { getMessage: () => "", getUILanguage: () => "en-US" } });
+      expect(t("recStateRecording")).toBe("Recording");
+      expect(t("recLost", ["3"])).toMatch(/^3 fragments/);
+      // Chrome's own answer wins whenever there is one; an unknown key stays a key.
+      vi.stubGlobal("chrome", { i18n: { getMessage: (k: string) => (k === "recStateRecording" ? "Grabando ahora" : ""), getUILanguage: () => "en-US" } });
+      expect(t("recStateRecording")).toBe("Grabando ahora");
+      expect(t("noSuchKey")).toBe("noSuchKey");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

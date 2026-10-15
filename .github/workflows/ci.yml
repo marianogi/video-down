@@ -86,13 +86,17 @@ jobs:
           pnpm run test:e2e
       - name: Uninstall
         run: bash "$HOME/Library/Application Support/video-down/uninstall.sh"
+      # The native component's logs go inside the test results: one artifact, one root folder.
+      - name: Keep the native component's logs with the test results
+        if: failure()
+        run: |
+          mkdir -p extension/test-results
+          cp -R "$HOME/Library/Application Support/video-down/logs" extension/test-results/host-logs 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: macos-test-results
-          path: |
-            extension/test-results
-            ~/Library/Application Support/video-down/logs
+          path: extension/test-results
 
   windows:
     if: github.event_name == 'workflow_dispatch'
@@ -140,10 +144,16 @@ jobs:
           node e2e/fixtures/make-fixtures.mjs
           pnpm exec playwright install chromium
           pnpm run test:e2e
+      # On Windows the logs are on C: and the checkout on D:, which upload-artifact cannot put in one
+      # artifact ("is not a parent directory"): copy them into the test results first.
+      - name: Keep the native component's logs with the test results
+        if: failure()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force extension/test-results | Out-Null
+          Copy-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA 'video-down/logs') extension/test-results/host-logs -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: windows-test-results
-          path: |
-            extension/test-results
-            ~/AppData/Local/video-down/logs
+          path: extension/test-results

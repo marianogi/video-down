@@ -26,11 +26,19 @@ En `chrome://extensions`, las compilaciones que no son de publicación aparecen 
   la página recibe no cambia.
 - Si la página ya había leído la respuesta cuando la extensión iba a copiarla, la copia fallaba con un
   error sin atender. Ahora se descarta en silencio.
+- **Textos de reserva en las páginas de la extensión.** En la CI de Windows, Chrome abrió una vez la página
+  del grabador (en segundo plano) sin darle el catálogo de textos: `chrome.i18n` contestaba vacío a todo y
+  se veía «recStateRecording» en lugar de «Recording». El grabador, las opciones y el menú de la barra
+  llevan ahora una copia del catálogo en español e inglés y la usan cuando Chrome no contesta. Lo que se
+  inyecta en las webs no la lleva y no crece.
+- CI: en Windows no se subían las pruebas fallidas ni los registros porque el registro del componente
+  nativo está en `C:` y el código en `D:`. Ahora los registros se copian dentro de los resultados antes de
+  subirlos (también en macOS).
 - Pruebas: de extremo a extremo, una página con una petición bloqueada como lo haría un bloqueador de
   anuncios, un segundo `send()`, un `pushState` a otro origen y un `setMediaKeys` erróneo, ninguno
   atendido. Ningún error debe aparecer atribuido a la extensión, y la página tiene que seguir leyendo sus
   respuestas, también con una subclase de `XMLHttpRequest`. Con la 0.2.6 falla (`TypeError: Failed to
-  fetch` en `main-world.js`).
+  fetch` en `main-world.js`). Unitarias: 66, con los textos de reserva.
 
 ## 0.2.6 (2026-10-15)
 

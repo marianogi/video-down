@@ -1,6 +1,10 @@
 /** Small DOM helpers shared by the popup and the options page. */
 
-import { t } from "../shared/i18n";
+import { t, useBundledMessages } from "../shared/i18n";
+import en from "../../public/_locales/en/messages.json";
+import es from "../../public/_locales/es/messages.json";
+
+useBundledMessages({ en, es });
 
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -26,7 +30,11 @@ export function localize(root: ParentNode = document): void {
       if (attr && key) node.setAttribute(attr.trim(), t(key.trim()));
     }
   }
-  document.documentElement.lang = chrome.i18n.getUILanguage().split("-")[0] || "en";
+  try {
+    document.documentElement.lang = chrome.i18n.getUILanguage().split("-")[0] || "en";
+  } catch {
+    // no chrome.i18n: the page keeps its lang
+  }
 }
 
 export function sendMessage<T>(type: string, payload?: unknown): Promise<T> {
