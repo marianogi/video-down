@@ -574,19 +574,24 @@ Su menú ofrece dos formas de grabar:
 
 ### La pestaña de grabación
 
-Cada grabación se abre en una pestaña propia con:
+Cada grabación se abre en una pestaña propia. Siempre muestra el tiempo y el tamaño grabados, los
+cortes si los hubo, y dónde se graba: en el almacenamiento de video-down dentro de Chrome, en tu disco,
+sin ir a ninguna carpeta hasta que la guardes. El resto depende de la fase:
 
-- un **reproductor en diferido**: pausa, retrocede, adelanta y pulsa «Ir al directo» para alcanzar lo
-  último grabado, mientras la grabación sigue;
-- el tiempo y el tamaño grabados, los cortes si los hubo;
-- dónde se graba: en el almacenamiento de video-down dentro de Chrome, en tu disco; no va a ninguna
-  carpeta hasta que la guardes;
-- el **nombre del fichero**, propuesto con el título, la calidad y la hora de inicio, que puedes cambiar.
-  Si el vídeo está en un iframe, el título es el de la pestaña (el nombre del partido) y no el del
-  reproductor;
-- **Detener**, **Guardar como…** (también a mitad de grabación: guarda lo que haya) y **Descartar**.
-  «Guardar como…» abre siempre el diálogo de Chrome para elegir carpeta y nombre. Al terminar, la
-  página muestra la ruta completa del fichero y un botón «Mostrar en la carpeta».
+| Fase | Botones | El recuadro del vídeo |
+|---|---|---|
+| Grabando | **Detener** y **Descartar** (detiene y borra lo grabado) | Vacío: el directo ya se ve en su pestaña. **«Ver en diferido»** muestra aquí lo grabado sin parar la grabación: pausa, retrocede y pulsa «Ir al directo» para alcanzar lo último |
+| Detenida | **Guardar como…** y **Descartar**, con el **nombre del fichero** propuesto (título, calidad y hora de inicio), que puedes cambiar | Vacío, salvo que estuvieras viéndola en diferido |
+| Guardada | **Mostrar en la carpeta**, **Guardar como…** (otra copia) y **Descartar** (borra la copia de video-down; el fichero guardado no se toca) | El reproductor, para verla ahí mismo |
+
+- **«Guardar como…»** abre siempre el diálogo de Chrome para elegir carpeta y nombre, con el nombre
+  propuesto ya puesto. Al terminar, la página muestra la ruta completa del fichero.
+- Si el vídeo está en un iframe, el título es el de la pestaña (el nombre del partido) y no el del
+  reproductor.
+- Otras extensiones que renombran descargas (gestores de descargas como IDM) no cambian el nombre de
+  las grabaciones: el grabador lo propone en el mismo paso en que Chrome decide el nombre.
+- Se recuerda dónde se guardó cada grabación: al volver a abrir su pestaña, sigue mostrando la ruta, la
+  carpeta y el reproductor.
 
 La grabación no depende de esa pestaña: si la cierras, sigue. El botón de video-down de la barra lista
 las grabaciones para volver a abrirlas.

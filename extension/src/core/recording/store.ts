@@ -33,6 +33,9 @@ export interface RecordingInfo {
   /** The page's audio never started: the capture records the picture only */
   noAudio?: boolean;
   savedAt?: number;
+  /** Where the person saved it (full path), and Chrome's download id, to show it in its folder */
+  savedPath?: string;
+  savedDownloadId?: number;
   error?: string;
 }
 

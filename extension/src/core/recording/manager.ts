@@ -221,6 +221,23 @@ export async function discardRecording(id: string): Promise<void> {
   chrome.runtime.sendMessage({ type: MessageType.RECORDING_PROGRESS, payload: { id, deleted: true } }, () => void chrome.runtime.lastError);
 }
 
+/** The recorder page saved it: remember where, so it can show it in its folder and play it. */
+export async function markRecordingSaved(id: string, path: string, downloadId: number): Promise<void> {
+  const rec = active.get(id);
+  const info = rec?.info ?? (await getRecording(id));
+  if (!info) return;
+  info.savedAt = Date.now();
+  info.savedPath = path;
+  info.savedDownloadId = downloadId;
+  if (rec) {
+    await save(rec);
+    return;
+  }
+  await putRecording(info);
+  const payload: RecordingProgress = { ...info, lost: 0 };
+  chrome.runtime.sendMessage({ type: MessageType.RECORDING_PROGRESS, payload }, () => void chrome.runtime.lastError);
+}
+
 export async function recordingProgress(id: string): Promise<RecordingProgress | null> {
   const rec = active.get(id);
   if (rec) return { ...rec.info, lost: rec.lost };

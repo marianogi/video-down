@@ -554,27 +554,44 @@ test("12h · a menu closed without downloading: the icon goes on with the shared
 // ---------------------------------------------------------------- recording
 
 /** The recorder page: wait for something recorded, stop, save, and check the file with ffprobe. */
-async function recordAndSave(recorder: Page, downloads: string, seconds: number) {
+async function recordAndSave(recorder: Page, downloads: string, seconds: number, opts: { timeshift?: boolean } = {}) {
   await expect(recorder.locator("#state")).toHaveText("Recording", { timeout: 20_000 });
+  // While recording: only Stop and Discard, and no player unless asked for (the live plays in its tab).
+  await expect(recorder.locator("#stop")).toBeVisible();
+  await expect(recorder.locator("#discard")).toBeVisible();
+  await expect(recorder.locator("#save")).toBeHidden();
+  await expect(recorder.locator("#show")).toBeHidden();
+  await expect(recorder.locator("#player")).toBeHidden();
+  await expect(recorder.getByText(/storage inside Chrome/)).toBeVisible();
   await expect
     .poll(async () => {
       const [m, s] = ((await recorder.locator("#duration").textContent()) ?? "0:00").split(":").map(Number);
       return (m ?? 0) * 60 + (s ?? 0);
     }, { timeout: 60_000 })
     .toBeGreaterThanOrEqual(seconds);
-  // The time-shift player plays what has been recorded so far.
-  await expect.poll(() => recorder.locator("#player").evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  if (opts.timeshift) {
+    // On demand: what has been recorded so far, while it keeps recording.
+    await recorder.getByRole("button", { name: "Watch time-shifted" }).click();
+    await expect(recorder.locator("#player")).toBeVisible();
+    await expect(recorder.getByRole("button", { name: "Go to live" })).toBeVisible();
+    await expect.poll(() => recorder.locator("#player").evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  }
   await recorder.locator("#stop").click();
   await expect(recorder.locator("#state")).not.toHaveText("Recording", { timeout: 20_000 });
-  // It says where it records until saved, and proposes a name that can be changed.
-  await expect(recorder.getByText(/storage inside Chrome/)).toBeVisible();
+  // Stopped: a proposed name that can be changed, Save as… and Discard; nothing saved to show yet.
+  await expect(recorder.locator("#stop")).toBeHidden();
+  await expect(recorder.locator("#save")).toBeVisible();
+  await expect(recorder.locator("#show")).toBeHidden();
   const name = recorder.locator("#name");
   await expect(name).not.toHaveValue("");
   await name.fill("My recording ñ");
   const since = Date.now() - 1000;
   await recorder.locator("#save").click();
   await expect(recorder.locator("#save-status")).toContainText("Saved to", { timeout: 120_000 });
+  // Saved: its folder, and the player to watch it here.
   await expect(recorder.locator("#show")).toBeVisible();
+  await expect(recorder.locator("#player")).toBeVisible();
+  await expect.poll(() => recorder.locator("#player").evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
   await expect.poll(() => newestFile(downloads, since), { timeout: 15_000 }).not.toBeNull();
   return newestFile(downloads, since)!;
 }
@@ -604,7 +621,7 @@ test("10 · live HLS: the icon unfolds into download and record; exact copy, tim
   const recorder = await opened;
   await expect(recButton(page)).toHaveAccessibleName("Recording this video");
   // The first reload already brings 6 s (the live edge): 10 s proves later segments are followed.
-  const file = await recordAndSave(recorder, downloads, 10);
+  const file = await recordAndSave(recorder, downloads, 10, { timeshift: true });
   expect(probe(file)).toMatchObject({ height: 360, video: "h264", audio: "aac" });
   expect(durationOf(file)).toBeGreaterThanOrEqual(9);
   await recorder.close();

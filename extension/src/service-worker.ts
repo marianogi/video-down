@@ -54,6 +54,7 @@ import {
   setActivityListener,
   startRecording,
   stopRecording,
+  markRecordingSaved,
 } from "./core/recording/manager";
 import {
   nativeStatus,
@@ -1103,6 +1104,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     case MessageType.STOP_RECORDING:
       return reply(stopRecording(String(message.payload?.id ?? "")).then(() => ({ success: true })));
+    case MessageType.MARK_RECORDING_SAVED: {
+      // Only the extension's own pages (the recorder) save recordings.
+      if (sender.tab && !sender.url?.startsWith(chrome.runtime.getURL(""))) return false;
+      const recId = String(message.payload?.id ?? "");
+      const path = message.payload?.path;
+      const downloadId = message.payload?.downloadId;
+      if (!/^[a-z0-9]{1,40}$/.test(recId) || typeof path !== "string" || path.length > 4096 || !Number.isInteger(downloadId)) return false;
+      return reply(markRecordingSaved(recId, path, downloadId).then(() => ({ success: true })));
+    }
     case MessageType.DISCARD_RECORDING:
       return reply(discardRecording(String(message.payload?.id ?? "")).then(() => ({ success: true })));
     case MessageType.OPEN_RECORDING: {

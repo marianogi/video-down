@@ -20,10 +20,13 @@
 
     <section class="card">
       <div class="screen">
-        <video id="player" controls playsinline></video>
-        <p id="waiting" class="muted" data-i18n="recWaiting"></p>
+        <video id="player" controls playsinline hidden></video>
+        <div id="placeholder" class="placeholder">
+          <p id="placeholder-text"></p>
+          <button id="timeshift" class="btn secondary" type="button" data-i18n="recWatchDelayed" hidden></button>
+        </div>
       </div>
-      <div class="actions">
+      <div id="player-actions" class="actions" hidden>
         <button id="live" class="btn secondary" type="button" data-i18n="recGoLive" disabled></button>
         <span id="delay" class="muted" aria-live="polite"></span>
       </div>
@@ -35,15 +38,15 @@
         <dt data-i18n="recSize"></dt><dd id="size">0 B</dd>
         <dt data-i18n="recWhereLabel"></dt><dd data-i18n="recWhere"></dd>
       </dl>
-      <label class="field">
+      <label id="name-field" class="field" hidden>
         <span data-i18n="recNameLabel"></span>
         <input id="name" type="text" maxlength="180" spellcheck="false" autocomplete="off">
       </label>
       <p id="notice" class="notice" role="alert" hidden></p>
       <div class="actions">
-        <button id="stop" class="btn" type="button" data-i18n="recStop"></button>
-        <button id="save" class="btn" type="button" data-i18n="recSave" disabled></button>
-        <button id="discard" class="btn secondary" type="button" data-i18n="recDiscard"></button>
+        <button id="stop" class="btn" type="button" data-i18n="recStop" hidden></button>
+        <button id="save" class="btn" type="button" data-i18n="recSave" hidden></button>
+        <button id="discard" class="btn secondary" type="button" data-i18n="recDiscard" hidden></button>
       </div>
       <p class="saved-row"><span id="save-status" class="muted" aria-live="polite"></span>
         <button id="show" class="btn secondary" type="button" data-i18n="recShowFolder" hidden></button></p>

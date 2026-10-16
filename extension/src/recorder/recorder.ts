@@ -1,9 +1,14 @@
 /**
- * Recorder page: time-shift viewer and remote control of one recording.
+ * Recorder page: remote control of one recording, and its player.
  *
- * The recording itself runs in the service worker (see core/recording/manager.ts); this page
- * plays what has been stored so far with hls.js (pause, rewind, back to the newest moment),
- * shows its progress, and stops, saves or discards it. Closing the page does not stop it.
+ * The recording itself runs in the service worker (see core/recording/manager.ts). This page shows
+ * its progress and, by state:
+ *  - recording: Stop and Discard (stop and delete). The live keeps playing in its own tab, so no
+ *    player here unless asked for: «Watch time-shifted» plays what has been recorded so far with
+ *    hls.js (pause, rewind, «Go to live») while the recording goes on;
+ *  - stopped: the file name, Save as… and Discard;
+ *  - saved: where it was saved, «Show in folder», and the player to watch it here.
+ * Closing the page does not stop the recording.
  */
 
 import Hls from "hls.js";
@@ -23,6 +28,9 @@ let info: RecordingProgress | null = null;
 let hls: Hls | null = null;
 let saving = false;
 let gone = false;
+/** The person asked to watch it while it records */
+let timeshift = false;
+let noPlayer = false;
 
 function clock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -39,14 +47,20 @@ function errorText(error: string | undefined): string {
   return `${t("recErrorTitle")}: ${error.replace(/https?:\/\/\S+/g, "").slice(0, 200)}`;
 }
 
+function show(elementId: string, visible: boolean): void {
+  $(elementId).hidden = !visible;
+}
+
 function render(): void {
   if (gone) return;
   if (!info) {
     $("title").textContent = t("recUnknown");
-    for (const b of ["stop", "save", "discard", "live"]) $<HTMLButtonElement>(b).disabled = true;
+    for (const b of ["stop", "save", "discard", "show", "timeshift", "name-field", "player-actions"]) show(b, false);
     return;
   }
   const recording = info.state === "recording";
+  const saved = !!info.savedPath;
+  const hasData = info.bytes > 0;
   $("title").textContent = info.title;
   document.title = `${recording ? "● " : ""}${info.title} · video-down`;
   $("meta").textContent = t(info.mode === "copy" ? "recModeCopy" : "recModeCapture", info.label);
@@ -67,17 +81,41 @@ function render(): void {
   notice.hidden = notices.length === 0;
   notice.textContent = notices.join(" ");
 
-  $<HTMLButtonElement>("stop").disabled = !recording;
-  $<HTMLButtonElement>("save").disabled = saving || info.bytes === 0;
-  $("hint").textContent = t(info.mode === "copy" ? "recHintCopy" : "recHintCapture");
+  // Buttons: recording → Stop, Discard. Stopped → Save as…, Discard. Saved → also Show in folder.
+  show("stop", recording);
+  show("save", !recording && hasData);
+  $<HTMLButtonElement>("save").disabled = saving;
+  show("discard", true);
+  show("show", saved && !saving);
+  show("name-field", !recording && hasData);
   proposeName();
-  if (info.bytes > 0 && !hls) startPlayer();
+
+  // The box: the player once saved (or when asked for while recording), a note otherwise.
+  const playerWanted = hasData && !noPlayer && (saved || timeshift);
+  show("player", playerWanted);
+  show("placeholder", !playerWanted);
+  $("placeholder-text").textContent = noPlayer
+    ? t("recNoPlayer")
+    : recording
+      ? t(hasData ? "recRecordingHere" : "recWaiting")
+      : t(hasData ? "recStoppedHere" : "recNothing");
+  show("timeshift", recording && hasData && !timeshift && !noPlayer);
+  show("player-actions", recording && timeshift && !noPlayer);
+  if (playerWanted && !hls) startPlayer();
+
+  const status = $("save-status");
+  if (saved && !saving && !status.textContent) {
+    status.textContent = t("recSaved", info.savedPath!);
+    status.className = "ok";
+  }
+  $("hint").textContent = t(recording ? (info.mode === "copy" ? "recHintCopy" : "recHintCapture") : saved ? "recHintSaved" : "recHintStopped");
 }
 
 function startPlayer(): void {
   if (!info) return;
   if (!Hls.isSupported()) {
-    $("waiting").textContent = t("recNoPlayer");
+    noPlayer = true;
+    render();
     return;
   }
   hls = new Hls({
@@ -88,11 +126,10 @@ function startPlayer(): void {
     backBufferLength: 180,
   });
   hls.on(Hls.Events.MANIFEST_PARSED, () => {
-    $("waiting").hidden = true;
     $<HTMLButtonElement>("live").disabled = false;
   });
   hls.on(Hls.Events.ERROR, (_event, data) => {
-    console.warn("[video-down] time-shift player:", data.type, data.details, data.fatal ? "(fatal)" : "", data.error?.message ?? "");
+    console.warn("[video-down] recording player:", data.type, data.details, data.fatal ? "(fatal)" : "", data.error?.message ?? "");
     if (!data.fatal || !hls) return;
     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
     else hls.startLoad();
@@ -131,14 +168,21 @@ chrome.runtime.onMessage.addListener((message) => {
     gone = true;
     hls?.destroy();
     hls = null;
-    $("notice").hidden = false;
-    $("notice").textContent = t("recDiscarded");
-    for (const b of ["stop", "save", "discard", "live"]) $<HTMLButtonElement>(b).disabled = true;
+    show("player", false);
+    show("placeholder", true);
+    $("placeholder-text").textContent = t("recDiscarded");
+    $("notice").hidden = true;
+    for (const b of ["stop", "save", "discard", "show", "timeshift", "name-field", "player-actions"]) show(b, false);
     return false;
   }
   info = message.payload as RecordingProgress;
   render();
   return false;
+});
+
+$("timeshift").addEventListener("click", () => {
+  timeshift = true;
+  render();
 });
 
 $("live").addEventListener("click", () => {
@@ -161,29 +205,29 @@ function proposeName(): void {
   if (info && !nameEdited && !nameInput.value) nameInput.value = defaultName(info);
 }
 
-let lastSaved: number | null = null;
 $("show").addEventListener("click", () => {
-  if (lastSaved !== null) chrome.downloads.show(lastSaved);
+  if (info?.savedDownloadId !== undefined) chrome.downloads.show(info.savedDownloadId);
 });
 
 $("save").addEventListener("click", async () => {
   if (!info || saving) return;
   saving = true;
-  render();
   const status = $("save-status");
   status.className = "muted";
-  $("show").hidden = true;
+  render();
   const stages = { building: t("recBuilding"), converting: t("recConverting"), saving: t("recSavingFile") };
   try {
     const files = await saveRecording(info, (stage) => (status.textContent = stages[stage]), nameInput.value);
+    const first = files[0];
     status.textContent = t("recSaved", files.map((f) => f.path).join(" · "));
     status.className = "ok";
-    lastSaved = files[0]?.id ?? null;
-    $("show").hidden = lastSaved === null;
+    // Remembered with the recording: the page shows it again if reopened, and its player.
+    if (first) await sendMessage(MessageType.MARK_RECORDING_SAVED, { id, path: first.path, downloadId: first.id }).catch(() => undefined);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    status.textContent = /USER_CANCELED/i.test(message) ? t("recSaveCancelled") : t("recSaveFailed", message);
-    status.className = /USER_CANCELED/i.test(message) ? "muted" : "error";
+    const cancelled = /USER_CANCELED/i.test(message);
+    status.textContent = cancelled ? t("recSaveCancelled") : t("recSaveFailed", message);
+    status.className = cancelled ? "muted" : "error";
   } finally {
     saving = false;
     render();
@@ -191,7 +235,9 @@ $("save").addEventListener("click", async () => {
 });
 
 $("discard").addEventListener("click", async () => {
-  if (!confirm(t("recDiscardConfirm"))) return;
+  if (!info) return;
+  const question = info.state === "recording" ? "recDiscardRecording" : info.savedPath ? "recDiscardSaved" : "recDiscardConfirm";
+  if (!confirm(t(question))) return;
   await sendMessage(MessageType.DISCARD_RECORDING, { id }).catch(() => undefined);
 });
 

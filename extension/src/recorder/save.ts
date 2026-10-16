@@ -38,6 +38,13 @@ export interface SavedFile {
 
 async function download(blob: Blob, filename: string): Promise<SavedFile> {
   const url = URL.createObjectURL(blob);
+  // With saveAs, Chrome's dialog proposed the blob's id (a token) instead of `filename`. Naming the
+  // download when Chrome determines its name, which comes before the dialog, makes it propose ours.
+  // Any other download: nothing is said, and Chrome names it as usual.
+  const onDetermining = (item: chrome.downloads.DownloadItem, suggest: (s?: chrome.downloads.FilenameSuggestion) => void) => {
+    if (item.url === url || item.finalUrl === url) suggest({ filename, conflictAction: "uniquify" });
+  };
+  chrome.downloads.onDeterminingFilename.addListener(onDetermining);
   try {
     // A recording is saved on purpose, one at a time: always let the person choose where and how.
     const id = await chrome.downloads.download({ url, filename, saveAs: true });
@@ -62,6 +69,7 @@ async function download(blob: Blob, filename: string): Promise<SavedFile> {
     const [item] = await chrome.downloads.search({ id });
     return { id, path: item?.filename || filename };
   } finally {
+    chrome.downloads.onDeterminingFilename.removeListener(onDetermining);
     URL.revokeObjectURL(url);
   }
 }

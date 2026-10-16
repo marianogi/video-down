@@ -7,6 +7,29 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.11 (2026-10-16)
+
+- **«Guardar como…» propone el nombre de la grabación, no un código.** El diálogo proponía un código
+  como `2c21cb6f-….mp4`. Se reprodujo con la extensión «IDM Integration Module» (Internet Download
+  Manager) cargada junto a video-down: esa extensión propone el nombre de cada descarga, y su propuesta
+  pasaba por delante del nombre que video-down daba como parámetro. Para una grabación, ese nombre es el
+  código del bloque de datos. Ahora el grabador propone su nombre en ese mismo paso, el que Chrome usa
+  para decidir los nombres, solo para su propia descarga y mientras dura. Como gana la extensión
+  instalada más recientemente, y video-down se recarga en cada actualización, su nombre es el que se
+  usa. Comprobado con un Chromium de prueba y la extensión de IDM cargada: sin el cambio, el fichero se
+  llama `2c21cb6f-….mp4`; con él, lleva el nombre de la grabación.
+- **La pestaña de grabación, por fases.**
+  - **Mientras graba:** solo **Detener** y **Descartar** (detener y borrar lo grabado). No muestra
+    reproductor: el directo ya se ve en su pestaña. El diferido sigue disponible bajo demanda con
+    **«Ver en diferido»**, que muestra aquí lo grabado sin parar la grabación, con «Ir al directo».
+  - **Detenida:** el nombre propuesto (editable), **Guardar como…** y **Descartar**.
+  - **Guardada:** la ruta del fichero, **Mostrar en la carpeta** y el reproductor para verla ahí mismo.
+    Se puede guardar otra copia. Descartar borra la copia de video-down, no el fichero guardado.
+  - Se recuerda dónde se guardó: al volver a abrir la pestaña desde el botón de la barra, sigue
+    mostrando la ruta, «Mostrar en la carpeta» y el reproductor.
+- Pruebas: las de grabación comprueban los botones de cada fase, que no hay reproductor mientras graba
+  salvo «Ver en diferido» (probado con el directo HLS) y que lo hay al guardar.
+
 ## 0.2.10 (2026-10-16)
 
 - **La copia exacta de un directo ya graba cuando el servidor redirige cada fragmento.** En la web de
