@@ -1,8 +1,10 @@
 # video-down
 
-Extensión de Chrome para **Windows y macOS** que detecta los vídeos de la página que estás viendo,
-pinta un pequeño icono de descarga en la **esquina superior izquierda de cada vídeo** y, al pulsarlo,
-muestra las **resoluciones disponibles**. Al elegir una, la descarga empieza en el acto.
+Extensión de Chrome para **Windows y macOS** que detecta los vídeos de la página que estás viendo y
+pinta un pequeño icono en la **esquina superior izquierda de cada vídeo**. Al pasar el ratón se despliega
+en **descargar** y, si es una emisión en directo, también en **grabar**. Descargar muestra las
+**resoluciones disponibles**, y al elegir una la descarga empieza en el acto. Grabar guarda el directo
+con diferido.
 
 Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo descarga**.
 
@@ -12,19 +14,230 @@ Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo de
 
 ## Índice
 
-1. [Cómo se usa](#cómo-se-usa)
-2. [Las vías de descarga: toda la casuística](#las-vías-de-descarga-toda-la-casuística)
-3. [Grabar en directo, con diferido](#grabar-en-directo-con-diferido)
-4. [Diagrama de decisión](#diagrama-de-decisión)
-5. [Qué hace cada pieza: navegador, ffmpeg, Python, Deno y yt-dlp](#qué-hace-cada-pieza-navegador-ffmpeg-python-deno-y-yt-dlp)
-6. [Arquitectura y ficheros](#arquitectura-y-ficheros)
-7. [Instalación en Windows y en macOS](#instalación-en-windows-y-en-macos)
-8. [Por qué el instalador no puede activar la extensión él solo](#por-qué-el-instalador-no-puede-activar-la-extensión-él-solo)
+1. [Instalación en Windows y en macOS](#instalación-en-windows-y-en-macos)
+2. [Por qué el instalador no puede activar la extensión él solo](#por-qué-el-instalador-no-puede-activar-la-extensión-él-solo)
+3. [Cómo se usa](#cómo-se-usa)
+4. [Las vías de descarga: toda la casuística](#las-vías-de-descarga-toda-la-casuística)
+5. [Grabar en directo, con diferido](#grabar-en-directo-con-diferido)
+6. [Diagrama de decisión](#diagrama-de-decisión)
+7. [Qué hace cada pieza: navegador, ffmpeg, Python, Deno y yt-dlp](#qué-hace-cada-pieza-navegador-ffmpeg-python-deno-y-yt-dlp)
+8. [Arquitectura y ficheros](#arquitectura-y-ficheros)
 9. [Seguridad](#seguridad)
 10. [Ajustes](#ajustes)
 11. [Desarrollo](#desarrollo)
 12. [Limitaciones conocidas](#limitaciones-conocidas)
 13. [Créditos y licencias](#créditos-y-licencias)
+
+---
+
+## Instalación en Windows y en macOS
+
+La instalación tiene dos partes:
+
+1. **El instalador** deja preparados en tu usuario la extensión y el componente nativo (Deno, ffmpeg y
+   yt-dlp). No pide permisos de administrador.
+2. **Un paso manual en Chrome, una sola vez:** cargar la extensión desde su carpeta. Chrome no permite que
+   ningún programa lo haga por ti (ver
+   [Por qué el instalador no puede activar la extensión él solo](#por-qué-el-instalador-no-puede-activar-la-extensión-él-solo)).
+
+### Requisitos
+
+| | Windows | macOS |
+|---|---|---|
+| Sistema | Windows 10 u 11 de 64 bits | Apple Silicon o Intel. Las pruebas automáticas se hacen en macOS 14 con Apple Silicon |
+| Navegador | Google Chrome 116 o posterior | Google Chrome 116 o posterior |
+| Permisos | Sin administrador: instala solo para tu usuario | Sin `sudo`: instala solo para tu usuario |
+| Internet | Durante la instalación (ver abajo qué descarga) | Igual |
+| Espacio | Unos 350 MB (Deno, ffmpeg y yt-dlp ocupan unos 310 MB) | Los mismos componentes; no medido |
+
+Durante la instalación se descargan, y se comprueba la huella SHA-256 de cada uno:
+
+- **Deno 2.9.7**, de `github.com/denoland/deno`;
+- **ffmpeg 9.0.2**, de `github.com/GyanD/codexffmpeg` en Windows y de `ffmpeg.martin-riedl.de` en macOS;
+- **la última versión estable de yt-dlp**, de `github.com/yt-dlp/yt-dlp`, comprobada contra su fichero
+  `SHA2-256SUMS`.
+
+Si una red corporativa o un cortafuegos bloquea esos sitios, la instalación se detiene con un error.
+
+### Paso 1. Descargar el paquete
+
+1. El repositorio es privado: entra en GitHub con una cuenta que tenga acceso y abre
+   <https://github.com/marianogi/video-down/releases>.
+2. En la versión más reciente, en «Assets», descarga:
+   - en Windows, `video-down-setup-<versión>.exe`;
+   - en macOS, `video-down-<versión>-macos.zip`.
+3. Recomendado: comprueba que el fichero es el publicado. Las notas de cada versión traen sus
+   «Huellas SHA-256». Calcula la del fichero descargado y compara las dos:
+   - Windows (PowerShell): `Get-FileHash .\video-down-setup-<versión>.exe -Algorithm SHA256`
+   - macOS (Terminal): `shasum -a 256 video-down-<versión>-macos.zip`
+
+   Si no coinciden, no lo ejecutes.
+
+### Paso 2 en Windows. Ejecutar el instalador
+
+1. Haz doble clic en `video-down-setup-<versión>.exe`.
+   - Si Chrome avisa al descargarlo de que el archivo no se descarga habitualmente, elige conservarlo.
+   - El instalador no está firmado digitalmente. Si Windows muestra «Windows protegió su PC», pulsa
+     «Más información» y después «Ejecutar de todas formas».
+2. El asistente pide el idioma y después muestra que está listo para instalar: pulsa «Instalar». No
+   pregunta carpeta: siempre instala en `%LOCALAPPDATA%\video-down`.
+3. Se abre una ventana de PowerShell que muestra cada paso: copia de ficheros, Deno, ffmpeg y yt-dlp (con
+   «SHA-256 correcta» en cada uno), configuración, registro del componente nativo y una comprobación
+   final. Termina con «Componente nativo instalado.». No la cierres: se cierra sola al acabar.
+   - Si algo falla, el asistente lo dice con un código de error. El detalle queda en
+     `%LOCALAPPDATA%\video-down\logs\install.log`. Revisa la conexión a Internet y vuelve a ejecutar el
+     instalador.
+4. El asistente muestra las instrucciones del paso siguiente (el fichero `LEEME.txt`). Pulsa «Siguiente».
+5. En la última pantalla hay dos casillas: «Abrir chrome://extensions para cargar la extensión» (solo
+   aparece si encuentra Chrome instalado) y «Abrir la carpeta de la extensión». Déjalas marcadas y pulsa
+   «Finalizar».
+
+Sigue en el [paso 3](#paso-3-cargar-la-extensión-en-chrome-los-dos-sistemas).
+
+### Paso 2 en macOS. Ejecutar el instalador
+
+1. Descomprime `video-down-<versión>-macos.zip`. Safari puede hacerlo solo al descargarlo. Queda una
+   carpeta `video-down` con:
+   - «Instalar video-down.command» y «Desinstalar video-down.command»;
+   - `install.sh`, `uninstall.sh`, `LEEME.txt` y `versions.json`;
+   - las carpetas `extension` y `native-host`.
+2. Haz doble clic en **«Instalar video-down.command»**. Se abre Terminal.
+   - No está firmado por un desarrollador identificado, así que macOS lo bloquea la primera vez:
+     - macOS 14 o anterior: botón derecho sobre el fichero → «Abrir» → «Abrir».
+     - macOS 15 o posterior: intenta abrirlo una vez; luego ve a Ajustes del Sistema → Privacidad y
+       seguridad, y pulsa «Abrir igualmente» junto al aviso de video-down.
+   - Si macOS pregunta si Terminal puede acceder a la carpeta donde está el paquete (por ejemplo,
+     Descargas), acepta: el instalador tiene que leer sus propios ficheros.
+   - Alternativa: abre Terminal, escribe `bash ` (con el espacio), arrastra `install.sh` a la ventana y
+     pulsa Intro.
+3. Terminal muestra cada paso, igual que en Windows. Detecta si el Mac es Apple Silicon o Intel y baja la
+   versión que toca de Deno y ffmpeg, cada una con «SHA-256 correcta». Termina con «Componente nativo
+   instalado.».
+4. Al terminar abre en Finder la carpeta de la extensión e intenta abrir `chrome://extensions` en Chrome.
+   La ventana de Terminal espera a que pulses Intro para cerrarse.
+   - Si algo falla, Terminal muestra «ERROR:» con el motivo. Revisa la conexión y vuelve a hacer doble
+     clic en el instalador.
+
+### Paso 3. Cargar la extensión en Chrome (los dos sistemas)
+
+Se hace una sola vez. Las actualizaciones posteriores solo piden recargarla.
+
+1. Abre `chrome://extensions`. Si el instalador no la ha abierto, escríbela en la barra de direcciones.
+2. Activa **«Modo de desarrollador»**, arriba a la derecha.
+3. Pulsa **«Cargar descomprimida»** y elige la carpeta de la extensión:
+   - Windows: `%LOCALAPPDATA%\video-down\extension`. En el selector puedes pegar esa ruta tal cual en la
+     barra de dirección.
+   - macOS: `~/Library/Application Support/video-down/extension`. La carpeta Library está oculta en
+     Finder: en el selector pulsa `Cmd+Mayús+G`, pega la ruta y pulsa Intro.
+4. Aparece la tarjeta «video-down» y, la primera vez, se abre sola su página de opciones.
+5. Para tener el botón a mano, pulsa el icono de extensiones de la barra de Chrome (la pieza de puzle) y
+   fija video-down.
+6. Comprobación: en las opciones de video-down (botón de la barra → «Opciones»), pulsa
+   **«Comprobar de nuevo»**. Debe decir **«Componente nativo activo»**.
+7. Abre cualquier página con un vídeo: aparece el icono de video-down en su esquina superior izquierda.
+
+El instalador también registra el componente nativo para Microsoft Edge, Brave y Chromium. En esos
+navegadores la extensión se carga igual, desde su propia página de extensiones y con su modo de
+desarrollador. Las pruebas automáticas solo se hacen con Chrome y Chromium.
+
+### Actualizar a una versión nueva
+
+1. Descarga el paquete nuevo (paso 1) y ejecútalo como la primera vez (paso 2). Sustituye la extensión y
+   el componente nativo, no vuelve a descargar Deno ni ffmpeg si no cambian de versión, y actualiza
+   yt-dlp.
+2. En `chrome://extensions`, pulsa el botón de recargar (la flecha circular) de la tarjeta de video-down.
+   La tarjeta debe mostrar el número de la versión nueva.
+3. No hace falta volver a cargarla: es la misma carpeta y la misma extensión, así que los ajustes y el
+   historial se conservan.
+
+Hazlo cuando no haya grabaciones ni descargas en curso: al recargar la extensión, una grabación en marcha
+se interrumpe (lo grabado hasta ese momento se conserva y se puede guardar).
+
+yt-dlp también se puede actualizar solo, sin reinstalar: opciones → «Actualizar yt-dlp».
+
+### Desinstalar
+
+**Windows**
+
+1. Configuración → Aplicaciones → «Aplicaciones instaladas» (en Windows 10, «Aplicaciones y
+   características») → video-down → Desinstalar. Borra `%LOCALAPPDATA%\video-down` y el registro del
+   componente nativo.
+2. En `chrome://extensions`, pulsa «Quitar» en la tarjeta de video-down.
+
+**macOS**
+
+1. Doble clic en «Desinstalar video-down.command» (en la carpeta del paquete descomprimido; macOS puede
+   pedir el mismo permiso que al instalar). Otra forma, en Terminal:
+   `bash ~/Library/Application\ Support/video-down/uninstall.sh`. Borra
+   `~/Library/Application Support/video-down` y el registro del componente nativo en los navegadores.
+2. En `chrome://extensions`, pulsa «Quitar» en la tarjeta de video-down.
+
+En los dos sistemas, los vídeos ya descargados o guardados no se tocan. Las grabaciones que no se hayan
+guardado desaparecen al quitar la extensión, porque viven en su almacenamiento dentro de Chrome.
+
+### Si algo no funciona
+
+- **Las opciones no dicen «Componente nativo activo»:** vuelve a ejecutar el instalador y pulsa de nuevo
+  «Comprobar de nuevo».
+- **Comprobar el componente nativo a mano:** responde con una línea JSON con su versión
+  (`hostVersion`), la de yt-dlp (`ytdlpVersion`), si encuentra ffmpeg y Deno (`true`) y la carpeta de
+  descargas de reserva.
+  - Windows (símbolo del sistema): `"%LOCALAPPDATA%\video-down\video-down-host.cmd" --self-check`
+  - macOS (Terminal): `"$HOME/Library/Application Support/video-down/video-down-host.sh" --self-check`
+- **Registro de la instalación en Windows:** `%LOCALAPPDATA%\video-down\logs\install.log`.
+- **Un vídeo que no sale como esperabas:** el enlace «Informe de diagnóstico» del menú (ver
+  [caso 11](#informe-de-diagnóstico)).
+
+### Instalación desatendida en Windows
+
+```
+video-down-setup-<versión>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+No muestra ventanas ni abre Chrome. Termina con código 0 si todo ha ido bien y con código 10 si no se
+pudo instalar el componente nativo. Así lo instalan las pruebas en máquinas limpias. El paso 3 sigue
+siendo manual.
+
+Sin el `.exe`, también se puede instalar desde una copia del repositorio compilada, ejecutando
+`installer\windows\install.ps1` en PowerShell.
+
+### Qué deja instalado
+
+```
+video-down/
+├─ extension/                  La extensión que se carga en Chrome
+├─ native-host/src/            Código del componente nativo (Deno)
+├─ bin/                        deno, ffmpeg, ffprobe, yt-dlp (+ installed.json con las versiones)
+├─ video-down-host.cmd / .sh   Lanzador con los permisos de Deno
+├─ native-host-manifest.json   Manifiesto que Chrome lee para encontrar el lanzador
+├─ config.json                 Carpeta de descargas de reserva del componente nativo (normalmente se usa la que decide Chrome)
+├─ state/ tmp/ logs/ cache/    Consultas recientes, temporales de yt-dlp, registro y caché
+└─ install / uninstall         Para reinstalar o actualizar sin el paquete original
+```
+
+Volver a ejecutar el instalador es seguro: no descarga otra vez lo que ya está en su versión y
+actualiza yt-dlp. yt-dlp también se puede actualizar desde las opciones de la extensión.
+
+---
+
+## Por qué el instalador no puede activar la extensión él solo
+
+Chrome **no permite que ningún programa instale una extensión que no venga de la Chrome Web Store** en un
+Windows o un Mac domésticos. Es una protección contra el malware y no depende de cómo esté hecho el
+instalador:
+
+- La directiva `ExtensionInstallForcelist` con extensiones de fuera de la tienda solo funciona en equipos
+  gestionados: Windows unido a un dominio, Mac inscrito en un MDM, o Chrome inscrito en la gestión en la nube
+  de Google.
+- La opción de línea de comandos `--load-extension` se eliminó de Chrome 137 en sus versiones oficiales.
+- La Web Store rechaza las extensiones que descargan de YouTube, así que publicarla allí tampoco es una opción.
+
+Por eso el instalador lo deja todo preparado y el único paso manual, una sola vez, es activar el
+**modo de desarrollador** en `chrome://extensions` y pulsar **«Cargar descomprimida»**.
+
+**Alternativa sin paso manual.** Si se inscribe Chrome en *Chrome Browser Cloud Management* (gratis con
+una cuenta de Cloud Identity Free), una directiva puede instalar la extensión sola y actualizarla desde un
+servidor propio. Es más trabajo de montar y queda como opción.
 
 ---
 
@@ -396,6 +609,8 @@ las grabaciones para volver a abrirlas.
 - Lo grabado sigue en el navegador hasta que pulsas «Descartar»: así puedes guardarlo otra vez o
   recuperarlo si algo se cierra.
 
+---
+
 ## Diagrama de decisión
 
 ```mermaid
@@ -518,228 +733,6 @@ todos usan el menú de la barra de Chrome.
 
 ---
 
-## Instalación en Windows y en macOS
-
-La instalación tiene dos partes:
-
-1. **El instalador** deja preparados en tu usuario la extensión y el componente nativo (Deno, ffmpeg y
-   yt-dlp). No pide permisos de administrador.
-2. **Un paso manual en Chrome, una sola vez:** cargar la extensión desde su carpeta. Chrome no permite que
-   ningún programa lo haga por ti (ver
-   [Por qué el instalador no puede activar la extensión él solo](#por-qué-el-instalador-no-puede-activar-la-extensión-él-solo)).
-
-### Requisitos
-
-| | Windows | macOS |
-|---|---|---|
-| Sistema | Windows 10 u 11 de 64 bits | Apple Silicon o Intel. Las pruebas automáticas se hacen en macOS 14 con Apple Silicon |
-| Navegador | Google Chrome 116 o posterior | Google Chrome 116 o posterior |
-| Permisos | Sin administrador: instala solo para tu usuario | Sin `sudo`: instala solo para tu usuario |
-| Internet | Durante la instalación (ver abajo qué descarga) | Igual |
-| Espacio | Unos 350 MB (Deno, ffmpeg y yt-dlp ocupan unos 310 MB) | Los mismos componentes; no medido |
-
-Durante la instalación se descargan, y se comprueba la huella SHA-256 de cada uno:
-
-- **Deno 2.9.7**, de `github.com/denoland/deno`;
-- **ffmpeg 9.0.2**, de `github.com/GyanD/codexffmpeg` en Windows y de `ffmpeg.martin-riedl.de` en macOS;
-- **la última versión estable de yt-dlp**, de `github.com/yt-dlp/yt-dlp`, comprobada contra su fichero
-  `SHA2-256SUMS`.
-
-Si una red corporativa o un cortafuegos bloquea esos sitios, la instalación se detiene con un error.
-
-### Paso 1. Descargar el paquete
-
-1. El repositorio es privado: entra en GitHub con una cuenta que tenga acceso y abre
-   <https://github.com/marianogi/video-down/releases>.
-2. En la versión más reciente, en «Assets», descarga:
-   - en Windows, `video-down-setup-<versión>.exe`;
-   - en macOS, `video-down-<versión>-macos.zip`.
-3. Recomendado: comprueba que el fichero es el publicado. Las notas de cada versión traen sus
-   «Huellas SHA-256». Calcula la del fichero descargado y compara las dos:
-   - Windows (PowerShell): `Get-FileHash .\video-down-setup-<versión>.exe -Algorithm SHA256`
-   - macOS (Terminal): `shasum -a 256 video-down-<versión>-macos.zip`
-
-   Si no coinciden, no lo ejecutes.
-
-### Paso 2 en Windows. Ejecutar el instalador
-
-1. Haz doble clic en `video-down-setup-<versión>.exe`.
-   - Si Chrome avisa al descargarlo de que el archivo no se descarga habitualmente, elige conservarlo.
-   - El instalador no está firmado digitalmente. Si Windows muestra «Windows protegió su PC», pulsa
-     «Más información» y después «Ejecutar de todas formas».
-2. El asistente pide el idioma y después muestra que está listo para instalar: pulsa «Instalar». No
-   pregunta carpeta: siempre instala en `%LOCALAPPDATA%\video-down`.
-3. Se abre una ventana de PowerShell que muestra cada paso: copia de ficheros, Deno, ffmpeg y yt-dlp (con
-   «SHA-256 correcta» en cada uno), configuración, registro del componente nativo y una comprobación
-   final. Termina con «Componente nativo instalado.». No la cierres: se cierra sola al acabar.
-   - Si algo falla, el asistente lo dice con un código de error. El detalle queda en
-     `%LOCALAPPDATA%\video-down\logs\install.log`. Revisa la conexión a Internet y vuelve a ejecutar el
-     instalador.
-4. El asistente muestra las instrucciones del paso siguiente (el fichero `LEEME.txt`). Pulsa «Siguiente».
-5. En la última pantalla hay dos casillas: «Abrir chrome://extensions para cargar la extensión» (solo
-   aparece si encuentra Chrome instalado) y «Abrir la carpeta de la extensión». Déjalas marcadas y pulsa
-   «Finalizar».
-
-Sigue en el [paso 3](#paso-3-cargar-la-extensión-en-chrome-los-dos-sistemas).
-
-### Paso 2 en macOS. Ejecutar el instalador
-
-1. Descomprime `video-down-<versión>-macos.zip`. Safari puede hacerlo solo al descargarlo. Queda una
-   carpeta `video-down` con:
-   - «Instalar video-down.command» y «Desinstalar video-down.command»;
-   - `install.sh`, `uninstall.sh`, `LEEME.txt` y `versions.json`;
-   - las carpetas `extension` y `native-host`.
-2. Haz doble clic en **«Instalar video-down.command»**. Se abre Terminal.
-   - No está firmado por un desarrollador identificado, así que macOS lo bloquea la primera vez:
-     - macOS 14 o anterior: botón derecho sobre el fichero → «Abrir» → «Abrir».
-     - macOS 15 o posterior: intenta abrirlo una vez; luego ve a Ajustes del Sistema → Privacidad y
-       seguridad, y pulsa «Abrir igualmente» junto al aviso de video-down.
-   - Si macOS pregunta si Terminal puede acceder a la carpeta donde está el paquete (por ejemplo,
-     Descargas), acepta: el instalador tiene que leer sus propios ficheros.
-   - Alternativa: abre Terminal, escribe `bash ` (con el espacio), arrastra `install.sh` a la ventana y
-     pulsa Intro.
-3. Terminal muestra cada paso, igual que en Windows. Detecta si el Mac es Apple Silicon o Intel y baja la
-   versión que toca de Deno y ffmpeg, cada una con «SHA-256 correcta». Termina con «Componente nativo
-   instalado.».
-4. Al terminar abre en Finder la carpeta de la extensión e intenta abrir `chrome://extensions` en Chrome.
-   La ventana de Terminal espera a que pulses Intro para cerrarse.
-   - Si algo falla, Terminal muestra «ERROR:» con el motivo. Revisa la conexión y vuelve a hacer doble
-     clic en el instalador.
-
-### Paso 3. Cargar la extensión en Chrome (los dos sistemas)
-
-Se hace una sola vez. Las actualizaciones posteriores solo piden recargarla.
-
-1. Abre `chrome://extensions`. Si el instalador no la ha abierto, escríbela en la barra de direcciones.
-2. Activa **«Modo de desarrollador»**, arriba a la derecha.
-3. Pulsa **«Cargar descomprimida»** y elige la carpeta de la extensión:
-   - Windows: `%LOCALAPPDATA%\video-down\extension`. En el selector puedes pegar esa ruta tal cual en la
-     barra de dirección.
-   - macOS: `~/Library/Application Support/video-down/extension`. La carpeta Library está oculta en
-     Finder: en el selector pulsa `Cmd+Mayús+G`, pega la ruta y pulsa Intro.
-4. Aparece la tarjeta «video-down» y, la primera vez, se abre sola su página de opciones.
-5. Para tener el botón a mano, pulsa el icono de extensiones de la barra de Chrome (la pieza de puzle) y
-   fija video-down.
-6. Comprobación: en las opciones de video-down (botón de la barra → «Opciones»), pulsa
-   **«Comprobar de nuevo»**. Debe decir **«Componente nativo activo»**.
-7. Abre cualquier página con un vídeo: aparece el icono de video-down en su esquina superior izquierda.
-
-El instalador también registra el componente nativo para Microsoft Edge, Brave y Chromium. En esos
-navegadores la extensión se carga igual, desde su propia página de extensiones y con su modo de
-desarrollador. Las pruebas automáticas solo se hacen con Chrome y Chromium.
-
-### Actualizar a una versión nueva
-
-1. Descarga el paquete nuevo (paso 1) y ejecútalo como la primera vez (paso 2). Sustituye la extensión y
-   el componente nativo, no vuelve a descargar Deno ni ffmpeg si no cambian de versión, y actualiza
-   yt-dlp.
-2. En `chrome://extensions`, pulsa el botón de recargar (la flecha circular) de la tarjeta de video-down.
-   La tarjeta debe mostrar el número de la versión nueva.
-3. No hace falta volver a cargarla: es la misma carpeta y la misma extensión, así que los ajustes y el
-   historial se conservan.
-
-Hazlo cuando no haya grabaciones ni descargas en curso: al recargar la extensión, una grabación en marcha
-se interrumpe (lo grabado hasta ese momento se conserva y se puede guardar).
-
-yt-dlp también se puede actualizar solo, sin reinstalar: opciones → «Actualizar yt-dlp».
-
-### Desinstalar
-
-**Windows**
-
-1. Configuración → Aplicaciones → «Aplicaciones instaladas» (en Windows 10, «Aplicaciones y
-   características») → video-down → Desinstalar. Borra `%LOCALAPPDATA%\video-down` y el registro del
-   componente nativo.
-2. En `chrome://extensions`, pulsa «Quitar» en la tarjeta de video-down.
-
-**macOS**
-
-1. Doble clic en «Desinstalar video-down.command» (en la carpeta del paquete descomprimido; macOS puede
-   pedir el mismo permiso que al instalar). Otra forma, en Terminal:
-   `bash ~/Library/Application\ Support/video-down/uninstall.sh`. Borra
-   `~/Library/Application Support/video-down` y el registro del componente nativo en los navegadores.
-2. En `chrome://extensions`, pulsa «Quitar» en la tarjeta de video-down.
-
-En los dos sistemas, los vídeos ya descargados o guardados no se tocan. Las grabaciones que no se hayan
-guardado desaparecen al quitar la extensión, porque viven en su almacenamiento dentro de Chrome.
-
-### Si algo no funciona
-
-- **Las opciones no dicen «Componente nativo activo»:** vuelve a ejecutar el instalador y pulsa de nuevo
-  «Comprobar de nuevo».
-- **Comprobar el componente nativo a mano:** responde con una línea JSON con su versión
-  (`hostVersion`), la de yt-dlp (`ytdlpVersion`), si encuentra ffmpeg y Deno (`true`) y la carpeta de
-  descargas de reserva.
-  - Windows (símbolo del sistema): `"%LOCALAPPDATA%\video-down\video-down-host.cmd" --self-check`
-  - macOS (Terminal): `"$HOME/Library/Application Support/video-down/video-down-host.sh" --self-check`
-- **Registro de la instalación en Windows:** `%LOCALAPPDATA%\video-down\logs\install.log`.
-- **Un vídeo que no sale como esperabas:** el enlace «Informe de diagnóstico» del menú (ver
-  [caso 11](#informe-de-diagnóstico)).
-
-### Instalación desatendida en Windows
-
-```
-video-down-setup-<versión>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-```
-
-No muestra ventanas ni abre Chrome. Termina con código 0 si todo ha ido bien y con código 10 si no se
-pudo instalar el componente nativo. Así lo instalan las pruebas en máquinas limpias. El paso 3 sigue
-siendo manual.
-
-Sin el `.exe`, también se puede instalar desde una copia del repositorio compilada, ejecutando
-`installer\windows\install.ps1` en PowerShell.
-
-### Qué deja instalado
-
-```
-video-down/
-├─ extension/                  La extensión que se carga en Chrome
-├─ native-host/src/            Código del componente nativo (Deno)
-├─ bin/                        deno, ffmpeg, ffprobe, yt-dlp (+ installed.json con las versiones)
-├─ video-down-host.cmd / .sh   Lanzador con los permisos de Deno
-├─ native-host-manifest.json   Manifiesto que Chrome lee para encontrar el lanzador
-├─ config.json                 Carpeta de descargas de reserva del componente nativo (normalmente se usa la que decide Chrome)
-├─ state/ tmp/ logs/ cache/    Consultas recientes, temporales de yt-dlp, registro y caché
-└─ install / uninstall         Para reinstalar o actualizar sin el paquete original
-```
-
-Volver a ejecutar el instalador es seguro: no descarga otra vez lo que ya está en su versión y
-actualiza yt-dlp. yt-dlp también se puede actualizar desde las opciones de la extensión.
-
-### Generar los paquetes
-
-```bash
-cd extension && pnpm install --frozen-lockfile && cd ..
-node installer/build-release.mjs          # release/video-down-setup-<v>.exe y release/video-down-<v>-macos.zip
-node installer/build-release.mjs --skip-exe   # solo el paquete de Mac (no necesita Inno Setup)
-```
-
-El `.exe` necesita [Inno Setup 6](https://jrsoftware.org/isinfo.php). El paquete de Mac se genera
-desde cualquier sistema: el script escribe el `.zip` conservando los permisos de ejecución.
-
----
-
-## Por qué el instalador no puede activar la extensión él solo
-
-Chrome **no permite que ningún programa instale una extensión que no venga de la Chrome Web Store** en un
-Windows o un Mac domésticos. Es una protección contra el malware y no depende de cómo esté hecho el
-instalador:
-
-- La directiva `ExtensionInstallForcelist` con extensiones de fuera de la tienda solo funciona en equipos
-  gestionados: Windows unido a un dominio, Mac inscrito en un MDM, o Chrome inscrito en la gestión en la nube
-  de Google.
-- La opción de línea de comandos `--load-extension` se eliminó de Chrome 137 en sus versiones oficiales.
-- La Web Store rechaza las extensiones que descargan de YouTube, así que publicarla allí tampoco es una opción.
-
-Por eso el instalador lo deja todo preparado y el único paso manual, una sola vez, es activar el
-**modo de desarrollador** en `chrome://extensions` y pulsar **«Cargar descomprimida»**.
-
-**Alternativa sin paso manual.** Si se inscribe Chrome en *Chrome Browser Cloud Management* (gratis con
-una cuenta de Cloud Identity Free), una directiva puede instalar la extensión sola y actualizarla desde un
-servidor propio. Es más trabajo de montar y queda como opción.
-
----
-
 ## Seguridad
 
 - **Permisos de la extensión:** red (para ver manifiestos y descargar segmentos), descargas, almacenamiento,
@@ -836,6 +829,17 @@ deno task test
 
 Para probar la extensión sin instalador: `chrome://extensions` → modo de desarrollador →
 «Cargar descomprimida» → carpeta `extension/dist`.
+
+### Generar los paquetes
+
+```bash
+cd extension && pnpm install --frozen-lockfile && cd ..
+node installer/build-release.mjs          # release/video-down-setup-<v>.exe y release/video-down-<v>-macos.zip
+node installer/build-release.mjs --skip-exe   # solo el paquete de Mac (no necesita Inno Setup)
+```
+
+El `.exe` necesita [Inno Setup 6](https://jrsoftware.org/isinfo.php). El paquete de Mac se genera
+desde cualquier sistema: el script escribe el `.zip` conservando los permisos de ejecución.
 
 ### Versiones
 
