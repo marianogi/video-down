@@ -34,6 +34,8 @@ interface Origin {
   tabId: number;
   frameId: number;
   index: number;
+  /** The tab's title: for a player embedded in an iframe it names the event, the frame's does not */
+  tabTitle?: string;
 }
 
 interface Active {
@@ -119,7 +121,7 @@ export async function startRecording(
   const info: RecordingInfo = {
     id,
     mode: payload.mode,
-    title: payload.title || "video",
+    title: (origin.frameId !== 0 && origin.tabTitle?.trim().slice(0, 500)) || payload.title || "video",
     label: payload.label,
     container: payload.mode === "capture" ? "mp4" : "ts",
     tracks,

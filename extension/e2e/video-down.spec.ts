@@ -280,6 +280,16 @@ test("2n · a player in an iframe the page covers with a transparent layer: its 
   expect(await page.evaluate(() => (window as unknown as { coverClicks: number }).coverClicks)).toBe(1);
 });
 
+test("2o · HLS whose segments redirect to another server that checks the Referer: downloaded", async ({ page, baseUrl, downloads }) => {
+  // The page's headers did not follow a redirect to a host no rule covered: every segment was refused.
+  await page.goto(`${baseUrl}/hls-redirect.html`);
+  await openDownload(page);
+  await expect(menu(page).getByRole("button", { name: /360p/ })).toBeVisible({ timeout: 15_000 });
+  await downloadAndCheck(page, downloads, /360p/, { height: 360 });
+  // By the browser engine itself, not handed over to yt-dlp after failing.
+  await expect(menu(page).locator(".vd-job .vd-option-meta", { hasText: "yt-dlp" })).toHaveCount(0);
+});
+
 test("2f · same, with variants and segments on another host that also checks the Referer", async ({ page, baseUrl, downloads }) => {
   await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html?player=player-cross.html`);
   const overlay = page.frameLocator("#player").locator("video-down-overlay");
@@ -556,9 +566,15 @@ async function recordAndSave(recorder: Page, downloads: string, seconds: number)
   await expect.poll(() => recorder.locator("#player").evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
   await recorder.locator("#stop").click();
   await expect(recorder.locator("#state")).not.toHaveText("Recording", { timeout: 20_000 });
+  // It says where it records until saved, and proposes a name that can be changed.
+  await expect(recorder.getByText(/storage inside Chrome/)).toBeVisible();
+  const name = recorder.locator("#name");
+  await expect(name).not.toHaveValue("");
+  await name.fill("My recording ñ");
   const since = Date.now() - 1000;
   await recorder.locator("#save").click();
-  await expect(recorder.locator("#save-status")).toContainText("Saved to Downloads", { timeout: 120_000 });
+  await expect(recorder.locator("#save-status")).toContainText("Saved to", { timeout: 120_000 });
+  await expect(recorder.locator("#show")).toBeVisible();
   await expect.poll(() => newestFile(downloads, since), { timeout: 15_000 }).not.toBeNull();
   return newestFile(downloads, since)!;
 }
@@ -589,7 +605,6 @@ test("10 · live HLS: the icon unfolds into download and record; exact copy, tim
   await expect(recButton(page)).toHaveAccessibleName("Recording this video");
   // The first reload already brings 6 s (the live edge): 10 s proves later segments are followed.
   const file = await recordAndSave(recorder, downloads, 10);
-  await expect(recorder.locator("#save-status")).toContainText(".mp4");
   expect(probe(file)).toMatchObject({ height: 360, video: "h264", audio: "aac" });
   expect(durationOf(file)).toBeGreaterThanOrEqual(9);
   await recorder.close();
@@ -602,6 +617,39 @@ test("10b · a live broadcast whose playlist only its player may read: recognise
   await expect(page).toHaveTitle(/reloads: [3-9]/, { timeout: 15_000 });
   await pointAt(page, hub(page));
   await expect(recButton(page)).toBeVisible({ timeout: 15_000 });
+});
+
+test("10e · exact copy of a live stream whose segments redirect to another server that checks the Referer", async ({ page, baseUrl, downloads, extContext }) => {
+  await page.goto(`${baseUrl}/live-redirect.html`);
+  await openRecord(page);
+  const copy = menu(page).getByRole("button", { name: /360p/ });
+  await expect(copy).toBeVisible({ timeout: 20_000 });
+  const opened = extContext.waitForEvent("page");
+  await copy.click();
+  const recorder = await opened;
+  const file = await recordAndSave(recorder, downloads, 6);
+  await expect(recorder.locator("#notice")).toBeHidden();
+  expect(probe(file)).toMatchObject({ height: 360, video: "h264" });
+  await recorder.close();
+});
+
+test("10f · a live player embedded in an iframe: the recording takes the page's title, not the player's", async ({ page, baseUrl, extContext }) => {
+  await page.goto(`http://localhost:${new URL(baseUrl).port}/embed-host.html?player=live.html`);
+  const overlay = page.frameLocator("#player").locator("video-down-overlay");
+  const rec = overlay.getByRole("button", { name: /Record this video/ });
+  await unfold(page, overlay.getByRole("button", { name: /^video-down: / }), rec);
+  await rec.click();
+  const copy = overlay.getByRole("dialog").getByRole("button", { name: /360p/ });
+  await expect(copy).toBeVisible({ timeout: 20_000 });
+  const opened = extContext.waitForEvent("page");
+  await copy.click();
+  const recorder = await opened;
+  await expect(recorder.locator("#title")).toHaveText("Course page with embedded player", { timeout: 15_000 });
+  await expect(recorder.locator("#name")).toHaveValue(/^Course page with embedded player/);
+  await recorder.locator("#stop").click();
+  recorder.on("dialog", (d) => void d.accept());
+  await recorder.locator("#discard").click();
+  await recorder.close().catch(() => undefined);
 });
 
 test("10d · a live playlist served as text/html without extension: recognised, and copied exactly", async ({ page, baseUrl }) => {
@@ -638,7 +686,6 @@ for (const [profile, codecs] of [
     const recorder = await opened;
     recorder.on("console", (m) => m.type() === "warning" && console.log(`[recorder] ${m.text()}`));
     const file = await recordAndSave(recorder, downloads, 3);
-    await expect(recorder.locator("#save-status")).toContainText(".mp4");
     const info = probe(file);
     expect(codecs as readonly string[]).toContain(info.video);
     expect(info.height).toBe(360);
@@ -732,13 +779,18 @@ test("keyboard: the icon unfolds with Enter, Escape closes the menu and then fol
 
 test("4 · YouTube through the native component, saved where Chrome saves (VD_E2E_ONLINE=1)", async ({ page, downloads }) => {
   test.skip(process.env.VD_E2E_ONLINE !== "1", "needs Internet and the installed native component");
-  await page.goto("https://www.youtube.com/watch?v=jNQXAC9IVRw");
-  for (const label of [/Accept all/i, /Aceptar todo/i]) {
-    const consent = page.getByRole("button", { name: label });
-    if (await consent.count()) {
-      await consent.first().click();
-      break;
+  // YouTube sometimes serves a consent page or an ad first: if no icon shows, load it once more.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.goto("https://www.youtube.com/watch?v=jNQXAC9IVRw");
+    for (const label of [/Accept all/i, /Aceptar todo/i]) {
+      const consent = page.getByRole("button", { name: label });
+      if (await consent.count()) {
+        await consent.first().click();
+        break;
+      }
     }
+    const shown = await hub(page).first().waitFor({ state: "visible", timeout: 30_000 }).then(() => true, () => false);
+    if (shown) break;
   }
   await openDownload(page);
   // A whole video on a real MSE player: its duration does not grow, so it is not taken for a live one.

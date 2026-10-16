@@ -13,7 +13,7 @@ import { MessageType } from "../shared/messages";
 import { playlistUrl } from "../core/recording/local-playlist";
 import type { RecordingProgress } from "../core/recording/manager";
 import { makeLocalLoader } from "./local-loader";
-import { saveRecording } from "./save";
+import { defaultName, saveRecording } from "./save";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const video = $<HTMLVideoElement>("player");
@@ -70,6 +70,7 @@ function render(): void {
   $<HTMLButtonElement>("stop").disabled = !recording;
   $<HTMLButtonElement>("save").disabled = saving || info.bytes === 0;
   $("hint").textContent = t(info.mode === "copy" ? "recHintCopy" : "recHintCapture");
+  proposeName();
   if (info.bytes > 0 && !hls) startPlayer();
 }
 
@@ -152,19 +153,37 @@ $("stop").addEventListener("click", () => {
   void sendMessage(MessageType.STOP_RECORDING, { id });
 });
 
+// The file name: proposed from the title, quality and start time, until the person types another.
+const nameInput = $<HTMLInputElement>("name");
+let nameEdited = false;
+nameInput.addEventListener("input", () => (nameEdited = true));
+function proposeName(): void {
+  if (info && !nameEdited && !nameInput.value) nameInput.value = defaultName(info);
+}
+
+let lastSaved: number | null = null;
+$("show").addEventListener("click", () => {
+  if (lastSaved !== null) chrome.downloads.show(lastSaved);
+});
+
 $("save").addEventListener("click", async () => {
   if (!info || saving) return;
   saving = true;
   render();
   const status = $("save-status");
+  status.className = "muted";
+  $("show").hidden = true;
   const stages = { building: t("recBuilding"), converting: t("recConverting"), saving: t("recSavingFile") };
   try {
-    const names = await saveRecording(info, (stage) => (status.textContent = stages[stage]));
-    status.textContent = t("recSaved", names.join(" · "));
+    const files = await saveRecording(info, (stage) => (status.textContent = stages[stage]), nameInput.value);
+    status.textContent = t("recSaved", files.map((f) => f.path).join(" · "));
     status.className = "ok";
+    lastSaved = files[0]?.id ?? null;
+    $("show").hidden = lastSaved === null;
   } catch (err) {
-    status.textContent = t("recSaveFailed", err instanceof Error ? err.message : String(err));
-    status.className = "error";
+    const message = err instanceof Error ? err.message : String(err);
+    status.textContent = /USER_CANCELED/i.test(message) ? t("recSaveCancelled") : t("recSaveFailed", message);
+    status.className = /USER_CANCELED/i.test(message) ? "muted" : "error";
   } finally {
     saving = false;
     render();

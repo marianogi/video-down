@@ -10,7 +10,8 @@
  * Scope of every rule:
  *  - only requests initiated by this extension (initiatorDomains = extension id),
  *  - only XMLHttpRequest/fetch,
- *  - only the hosts the playlists actually point to (one rule per host, any path),
+ *  - only the hosts the playlists actually point to (one rule per host, any path), plus a host
+ *    one of them redirected to and that refused the request without the headers (coverRedirect),
  *  - removed as soon as the fetch or the download ends.
  *
  * Generic for any site: the headers always come from the URL of the frame that
@@ -21,6 +22,12 @@
  */
 
 import { logger } from "../utils/logger";
+
+/** Which job covers each host filter, and with which page, to extend it to a redirect's host. */
+const jobOfHost = new Map<string, { jobId: string; pageUrl: string }>();
+const jobOfRule = new Map<number, string>();
+/** Rules added by coverRedirect, removed with the job's own rules */
+const redirectRules = new Map<string, number[]>();
 
 /** Deterministic positive 31-bit rule id for a (job, host) pair. */
 function ruleIdFor(key: string): number {
@@ -75,8 +82,28 @@ export async function addHeaderRulesForUrls(jobId: string, urls: string[], pageU
 
   const ids = rules.map((r) => r.id);
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids, addRules: rules });
+  for (const filter of filters) jobOfHost.set(filter, { jobId, pageUrl });
+  for (const id of ids) jobOfRule.set(id, jobId);
   logger.info(`[DNR] Added header rules ${ids.join(",")} for ${filters.join(" ")}`);
   return ids;
+}
+
+/**
+ * A request to a covered host was redirected to another host, which refused it: many CDNs hand
+ * each segment to another server that checks the Referer too, and the headers do not follow a
+ * redirect to a host no rule covers. Cover that host for the same job and page.
+ * @returns Whether a rule was added (then asking again may succeed)
+ */
+export async function coverRedirect(fromUrl: string, toUrl: string): Promise<boolean> {
+  const from = hostFilter(fromUrl);
+  const to = hostFilter(toUrl);
+  if (!from || !to || from === to || jobOfHost.has(to)) return false;
+  const job = jobOfHost.get(from);
+  if (!job) return false;
+  const ids = await addHeaderRulesForUrls(job.jobId, [toUrl], job.pageUrl);
+  redirectRules.set(job.jobId, [...(redirectRules.get(job.jobId) ?? []), ...ids]);
+  logger.info(`[DNR] Redirect from ${from} to ${to}: covered too`);
+  return ids.length > 0;
 }
 
 /** Single-URL form kept for the existing callers. */
@@ -89,8 +116,18 @@ export async function addHeaderRules(jobId: string, cdnUrl: string, pageUrl: str
  */
 export async function removeHeaderRules(ruleIds: number[]): Promise<void> {
   if (ruleIds.length === 0) return;
-  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ruleIds });
-  logger.info(`[DNR] Removed header rules ${ruleIds.join(",")}`);
+  // The rules coverRedirect added for the same jobs go with them.
+  const jobs = new Set(ruleIds.map((id) => jobOfRule.get(id)).filter((j): j is string => !!j));
+  const all = new Set(ruleIds);
+  for (const job of jobs) {
+    for (const id of redirectRules.get(job) ?? []) all.add(id);
+    redirectRules.delete(job);
+  }
+  for (const [filter, owner] of [...jobOfHost]) if (jobs.has(owner.jobId)) jobOfHost.delete(filter);
+  for (const id of all) jobOfRule.delete(id);
+  const ids = [...all];
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
+  logger.info(`[DNR] Removed header rules ${ids.join(",")}`);
 }
 
 let transientCounter = 0;

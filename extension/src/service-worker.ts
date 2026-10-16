@@ -1097,7 +1097,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case MessageType.START_RECORDING: {
       const tab = sender.tab;
       if (tab?.id === undefined) return false;
-      return reply(startRecording(message.payload, { tabId: tab.id, frameId: sender.frameId ?? 0, index: tab.index }));
+      return reply(
+        startRecording(message.payload, { tabId: tab.id, frameId: sender.frameId ?? 0, index: tab.index, ...(tab.title ? { tabTitle: tab.title } : {}) }),
+      );
     }
     case MessageType.STOP_RECORDING:
       return reply(stopRecording(String(message.payload?.id ?? "")).then(() => ({ success: true })));

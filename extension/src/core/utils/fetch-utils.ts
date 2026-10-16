@@ -4,6 +4,7 @@
 
 import { MessageType } from "../../shared/messages";
 import { INITIAL_RETRY_DELAY_MS, RETRY_BACKOFF_FACTOR } from "../../shared/constants";
+import { coverRedirect } from "../downloader/header-rules";
 
 type FetchFn<Data> = () => Promise<Data>;
 
@@ -43,7 +44,11 @@ export async function fetchResource(
   // Cookies are included like the page's own player would (host permissions allow it);
   // Origin/Referer are injected by the DNR rules the download handlers add.
   if (isServiceWorkerContext()) {
-    const response = await fetch(input, { credentials: "include", ...init });
+    let response = await fetch(input, { credentials: "include", ...init });
+    // Redirected to a host the page's headers do not cover, which refused it: cover it and ask again.
+    if (!response.ok && response.redirected && (await coverRedirect(String(input), response.url).catch(() => false))) {
+      response = await fetch(input, { credentials: "include", ...init });
+    }
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} ${response.statusText} for ${typeof input === "string" ? input : input.href}`);
     }

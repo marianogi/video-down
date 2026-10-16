@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>HLS with redirected segments</title>
+<style>body{margin:40px;font-family:sans-serif} video{width:640px;height:360px;background:#000;display:block}</style>
+</head><body><h1>HLS with redirected segments</h1>
+<!-- Each segment answers 302 to another server that demands the player's Referer. -->
+<video controls muted></video>
+<script type="module">import { msePlayer } from "./player.js"; msePlayer("/redir/hls/master.m3u8");</script>
+</body></html>

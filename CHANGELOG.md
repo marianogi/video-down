@@ -7,6 +7,33 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.10 (2026-10-16)
+
+- **La copia exacta de un directo ya graba cuando el servidor redirige cada fragmento.** En la web de
+  deportes del usuario la grabación se quedaba en 0 B y contaba los fragmentos como perdidos. Cada
+  fragmento responde con una redirección (302) a otro servidor, y ese segundo servidor exige el
+  `Referer` del reproductor. La extensión pone esas cabeceras solo para los servidores que aparecen en
+  la lista, y Chrome no las conserva al seguir una redirección a otro servidor: el segundo respondía
+  403. Ahora, si una petición con las cabeceras de la página se redirige a otro servidor y este la
+  rechaza, ese servidor recibe las mismas cabeceras y se pide otra vez. Vale también para las descargas
+  HLS del navegador: antes fallaban y, si estaba instalado, terminaba la descarga yt-dlp. Comprobado en
+  el directo real: 36 s grabados en 30 s, sin fragmentos perdidos.
+- **Dónde se graba y con qué nombre.** La pestaña de grabación dice dónde se graba: en el
+  almacenamiento de video-down dentro de Chrome, en el disco, sin ir a ninguna carpeta hasta guardarla.
+  Propone un nombre (título, calidad y hora de inicio) que se puede cambiar. «Guardar en Descargas» pasa
+  a ser **«Guardar como…»** y siempre abre el diálogo de Chrome para elegir carpeta y nombre. Al
+  terminar muestra la ruta completa del fichero y un botón **«Mostrar en la carpeta»**. Si se cancela el
+  diálogo, la grabación sigue ahí.
+- **Título de las grabaciones de reproductores incrustados.** Si el vídeo está en un iframe, la grabación
+  toma el título de la pestaña (el nombre del partido, por ejemplo) y no el del reproductor («Live
+  Stream»).
+- Pruebas: de extremo a extremo, una descarga HLS y una copia de un directo cuyos fragmentos redirigen a
+  otro servidor que exige el `Referer` (las dos fallan con la 0.2.9: la descarga solo salía por
+  yt-dlp y la copia se quedaba sin nada), un directo incrustado en un iframe (la grabación lleva el título
+  de la página), y el nombre propuesto, editable, con la ruta y «Mostrar en la carpeta» al guardar. La
+  de YouTube real recarga una vez si YouTube no enseña el vídeo a la primera (aviso de cookies o
+  anuncio), porque fallaba de vez en cuando por eso.
+
 ## 0.2.9 (2026-10-16)
 
 - **Reproductores tapados por una capa transparente.** Muchas webs ponen una capa invisible encima del

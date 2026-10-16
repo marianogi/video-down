@@ -33,14 +33,20 @@
       <dl class="details">
         <dt data-i18n="recDuration"></dt><dd id="duration">0:00</dd>
         <dt data-i18n="recSize"></dt><dd id="size">0 B</dd>
+        <dt data-i18n="recWhereLabel"></dt><dd data-i18n="recWhere"></dd>
       </dl>
+      <label class="field">
+        <span data-i18n="recNameLabel"></span>
+        <input id="name" type="text" maxlength="180" spellcheck="false" autocomplete="off">
+      </label>
       <p id="notice" class="notice" role="alert" hidden></p>
       <div class="actions">
         <button id="stop" class="btn" type="button" data-i18n="recStop"></button>
         <button id="save" class="btn" type="button" data-i18n="recSave" disabled></button>
         <button id="discard" class="btn secondary" type="button" data-i18n="recDiscard"></button>
       </div>
-      <p id="save-status" class="muted" aria-live="polite"></p>
+      <p class="saved-row"><span id="save-status" class="muted" aria-live="polite"></span>
+        <button id="show" class="btn secondary" type="button" data-i18n="recShowFolder" hidden></button></p>
     </section>
 
     <p id="hint" class="muted"></p>

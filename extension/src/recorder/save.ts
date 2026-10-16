@@ -1,5 +1,7 @@
 /**
- * Save a recording (or what has been recorded so far) to the Downloads folder.
+ * Save a recording (or what has been recorded so far) where the person chooses: Chrome's "Save as"
+ * dialog always opens, with the name given on the page (folder and name can still be changed there).
+ * Until then the recording only lives in video-down's storage inside Chrome (IndexedDB, on disk).
  *
  *  - Fragmented MP4 (player capture, or a live stream that sends fMP4): saved as it is, any size;
  *    the file is a Blob of the stored blobs, which Chrome reads from disk.
@@ -12,7 +14,6 @@
 import { FFmpeg, FFFSType } from "@ffmpeg/ffmpeg";
 import { recordingBlob, type RecordingInfo } from "../core/recording/store";
 import { sanitizeFilename } from "../core/utils/file-utils";
-import { shouldAskWhereToSave } from "../core/storage/settings";
 
 const REMUX_LIMIT = 1024 * 1024 * 1024;
 
@@ -24,15 +25,22 @@ function stamp(at: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}`;
 }
 
-function baseName(info: RecordingInfo): string {
+/** The name the page proposes: title, quality and when it started. */
+export function defaultName(info: RecordingInfo): string {
   return sanitizeFilename(`${info.title || "video"} ${info.label} ${stamp(info.createdAt)}`.trim()).slice(0, 180);
 }
 
-async function download(blob: Blob, filename: string): Promise<void> {
+/** A saved file: Chrome's download id and the full path it was written to. */
+export interface SavedFile {
+  id: number;
+  path: string;
+}
+
+async function download(blob: Blob, filename: string): Promise<SavedFile> {
   const url = URL.createObjectURL(blob);
   try {
-    const saveAs = await shouldAskWhereToSave().catch(() => false);
-    const id = await chrome.downloads.download({ url, filename, saveAs });
+    // A recording is saved on purpose, one at a time: always let the person choose where and how.
+    const id = await chrome.downloads.download({ url, filename, saveAs: true });
     // The blob URL must live until Chrome has written the file.
     await new Promise<void>((resolve, reject) => {
       const onChanged = (delta: chrome.downloads.DownloadDelta) => {
@@ -51,6 +59,8 @@ async function download(blob: Blob, filename: string): Promise<void> {
         else if (item?.state === "interrupted") done(new Error(item.error || "download interrupted"));
       });
     });
+    const [item] = await chrome.downloads.search({ id });
+    return { id, path: item?.filename || filename };
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -92,9 +102,9 @@ async function remux(inputs: Array<{ name: string; blob: Blob }>, extraArgs: str
   }
 }
 
-/** Returns the names of the files saved. */
-export async function saveRecording(info: RecordingInfo, progress: SaveProgress): Promise<string[]> {
-  const name = baseName(info);
+/** Returns the files saved. `chosen` is the name given on the page (without extension). */
+export async function saveRecording(info: RecordingInfo, progress: SaveProgress, chosen?: string): Promise<SavedFile[]> {
+  const name = sanitizeFilename(chosen?.trim() ?? "").slice(0, 180) || defaultName(info);
   progress("building");
 
   if (info.tracks.includes("video")) {
@@ -110,21 +120,18 @@ export async function saveRecording(info: RecordingInfo, progress: SaveProgress)
         ["-map", "0:v:0", "-map", "1:a:0"],
       );
       progress("saving");
-      await download(merged, `${name}.mp4`);
-      return [`${name}.mp4`];
+      return [await download(merged, `${name}.mp4`)];
     }
     progress("saving");
-    await download(video, `${name}.mp4`);
-    if (!audio) return [`${name}.mp4`];
-    await download(audio, `${name} (audio).m4a`);
-    return [`${name}.mp4`, `${name} (audio).m4a`];
+    const first = await download(video, `${name}.mp4`);
+    if (!audio) return [first];
+    return [first, await download(audio, `${name} (audio).m4a`)];
   }
 
   if (info.container === "mp4") {
     const blob = await recordingBlob(info.id, "main", "video/mp4");
     progress("saving");
-    await download(blob, `${name}.mp4`);
-    return [`${name}.mp4`];
+    return [await download(blob, `${name}.mp4`)];
   }
 
   const ts = await recordingBlob(info.id, "main", "video/mp2t");
@@ -133,13 +140,13 @@ export async function saveRecording(info: RecordingInfo, progress: SaveProgress)
       progress("converting");
       const mp4 = await remux([{ name: "rec.ts", blob: ts }], ["-bsf:a", "aac_adtstoasc"]);
       progress("saving");
-      await download(mp4, `${name}.mp4`);
-      return [`${name}.mp4`];
-    } catch {
+      return [await download(mp4, `${name}.mp4`)];
+    } catch (err) {
+      // The person cancelled the dialog: nothing more to do.
+      if (err instanceof Error && /USER_CANCELED/i.test(err.message)) throw err;
       // A stream ffmpeg cannot put in MP4 as it is: keep the original format.
     }
   }
   progress("saving");
-  await download(ts, `${name}.ts`);
-  return [`${name}.ts`];
+  return [await download(ts, `${name}.ts`)];
 }

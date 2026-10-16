@@ -30,6 +30,21 @@ body { background: var(--surface-2); }
 .details dt { color: var(--text-2); }
 .details dd { margin: 0; font-variant-numeric: tabular-nums; }
 
+.field { display: grid; gap: 4px; margin: 14px 0 0; }
+.field span { color: var(--text-2); }
+.field input {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  min-width: 0;
+}
+
+.saved-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 0; }
+#save-status { overflow-wrap: anywhere; }
+
 .chip.rec { color: #fff; background: #dc2626; border-color: #dc2626; }
 .chip.rec::before {
   content: "";

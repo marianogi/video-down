@@ -9,7 +9,7 @@
  * the recording plays and saves like any other. Any other encryption stops the recording.
  */
 
-import { addHeaderRulesForUrls, removeHeaderRules } from "../downloader/header-rules";
+import { addHeaderRulesForUrls, coverRedirect, removeHeaderRules } from "../downloader/header-rules";
 import { hasUnsupportedKey, liveUpdate, reloadDelayMs, type LiveSegment } from "./hls-live";
 import type { TrackKind } from "./local-playlist";
 import { putInit, putPart, type StoredPart } from "./store";
@@ -142,17 +142,26 @@ export class HlsCopyRecorder {
     this.ruleIds.push(...ids);
   }
 
-  private async fetchText(url: string): Promise<{ text: string; url: string }> {
+  /**
+   * A request whose server redirected it to another one that refused it (it wanted the page's
+   * headers, which do not follow a redirect to a host no rule covers): cover that host, ask again.
+   */
+  private async fetchCovered(url: string, init: RequestInit): Promise<Response> {
     await this.cover([url]);
-    const res = await fetch(url, { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(20_000) });
+    const res = await fetch(url, init);
+    if (res.ok || !res.redirected || !(await coverRedirect(url, res.url).catch(() => false))) return res;
+    return fetch(url, init);
+  }
+
+  private async fetchText(url: string): Promise<{ text: string; url: string }> {
+    const res = await this.fetchCovered(url, { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(20_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return { text: await res.text(), url: res.url || url };
   }
 
   private async fetchBytes(url: string, range?: { offset: number; length: number }): Promise<ArrayBuffer> {
-    await this.cover([url]);
     const headers: Record<string, string> = range ? { Range: `bytes=${range.offset}-${range.offset + range.length - 1}` } : {};
-    const res = await fetch(url, { credentials: "include", headers, signal: AbortSignal.timeout(60_000) });
+    const res = await this.fetchCovered(url, { credentials: "include", headers, signal: AbortSignal.timeout(60_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buf = await res.arrayBuffer();
     // A server that ignores Range sends the whole file: keep only the requested bytes.

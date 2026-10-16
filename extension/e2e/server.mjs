@@ -14,6 +14,11 @@
 //                        player, which sends "x-player: 1" (403 otherwise), as many live CDNs do
 //   /htmllive/stream     the same live playlist, without extension and served as text/html, as some
 //                        live CDNs hide it
+//   /redir/hls/…         the HLS fixture, but each segment answers 302 to the same segment on another
+//                        host (localhost vs 127.0.0.1) that demands the player's Referer, as CDNs that
+//                        hand segments to another server do
+//   /liveredir/…         the same with the live stream: its segments redirect to /livesecure/ on the
+//                        other host, which demands the player's Referer
 //   /session/…           only with the cookie vdsession=ok (403 otherwise), like a site behind a
 //                        login: post.html is a post page with its video, clip.mp4 that video
 //   /media/uni/*.m3u8    Unified Origin names; playlists answer 403 without ?token=abc, and the
@@ -93,12 +98,23 @@ export function startServer(port = 0) {
       }
       usedTokens.add(token);
       pathname = "/media/hls/master.m3u8";
+    } else if (pathname.startsWith("/redir/hls/") && pathname.endsWith(".ts")) {
+      res.writeHead(302, { Location: `http://localhost:${server.address().port}${pathname.replace("/redir/hls/", "/protected/hls/")}` }).end();
+      return;
+    } else if (pathname.startsWith("/redir/hls/")) {
+      pathname = pathname.replace("/redir/hls/", "/media/hls/");
+    } else if (/^\/liveredir\/seg\/\d+\.ts$/.test(pathname)) {
+      res.writeHead(302, { Location: `http://localhost:${server.address().port}${pathname.replace("/liveredir/", "/livesecure/")}`, "Cache-Control": "no-store" }).end();
+      return;
+    } else if (pathname.startsWith("/livesecure/") && !(req.headers.referer ?? "").startsWith(`${playerOrigin}/`)) {
+      res.writeHead(403, { "Content-Type": "text/plain" }).end("forbidden: bad referer");
+      return;
     } else if (pathname === "/htmllive/stream") {
       res.writeHead(200, { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8" }).end(livePlaylist());
       return;
-    } else if (pathname.startsWith("/live/") || pathname.startsWith("/liveg/") || pathname.startsWith("/htmllive/seg/")) {
+    } else if (/^\/(live|liveg|liveredir|livesecure)\//.test(pathname) || pathname.startsWith("/htmllive/seg/")) {
       const cors = { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
-      pathname = pathname.replace(/^\/htmllive\//, "/live/");
+      pathname = pathname.replace(/^\/(htmllive|liveredir|livesecure)\//, "/live/");
       const guarded = pathname.startsWith("/liveg/");
       pathname = pathname.replace(/^\/liveg\//, "/live/");
       if (guarded && pathname === "/live/v360.m3u8" && req.headers["x-player"] !== "1") {
