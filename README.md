@@ -734,16 +734,16 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.9, 16/10/2026)
+### Estado de verificación (versión 0.2.10, 16/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.8; extensión y componente nativo en 0.2.9 | Correcto |
-| Windows 11 | Las 47 pruebas de extremo a extremo, incluida YouTube real | 47 de 47 |
-| Windows 11 | Las dos pruebas nuevas (iframe tapado por una capa transparente, lista en directo como `text/html`) con el código de la 0.2.8 | Fallan las dos, como en la web de deportes del usuario |
-| Web de deportes del usuario (directo real) | Icono desplegado sobre el reproductor tapado; menú de grabar con copia exacta y captura | Correcto (sin llegar a grabar) |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 46 de 46 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 46 de 46 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.9; extensión y componente nativo en 0.2.10 | Correcto |
+| Windows 11 | Las 50 pruebas de extremo a extremo, incluida YouTube real | 50 de 50 |
+| Windows 11 | Las pruebas nuevas de fragmentos redirigidos (descarga HLS y copia de un directo) con el código de la 0.2.9 | Fallan: la copia se queda sin nada y la descarga solo sale por yt-dlp |
+| Web de deportes del usuario (directo real) | Copia exacta durante 30 s en un perfil de pruebas, descartada después | 36 s y 11,7 MB grabados, sin fragmentos perdidos |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 49 de 49 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 49 de 49 (YouTube no se ejecuta en GitHub) |
 
 El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas: se ha comprobado
 la ruta que Chrome decide sin diálogo, no el diálogo en sí.
