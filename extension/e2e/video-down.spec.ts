@@ -68,8 +68,16 @@ const test = base.extend<Fixtures, WorkerFixtures>({
       // On a brand-new install Chrome only learns the worker's webRequest listeners once its
       // script has run. (An installed extension's worker is woken for each request instead.)
       await new Promise((r) => setTimeout(r, 1000));
-      // Close the welcome tab opened on install.
-      for (const p of context.pages()) if (p.url().includes("options.html")) await p.close();
+      // Close the welcome tab opened on install, waiting for it: on a slow clean macOS runner it
+      // opened after the first test's page, took the front and left that page in the background,
+      // where the icon is never drawn.
+      for (const deadline = Date.now() + 15_000; Date.now() < deadline; await new Promise((r) => setTimeout(r, 100))) {
+        const welcome = context.pages().find((p) => p.url().includes("options.html"));
+        if (welcome) {
+          await welcome.close();
+          break;
+        }
+      }
       await use(context);
       await context.close();
       rmSync(profile, { recursive: true, force: true });

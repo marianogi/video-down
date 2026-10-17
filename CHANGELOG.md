@@ -17,7 +17,9 @@ En `chrome://extensions`, las compilaciones que no son de publicación aparecen 
   por CORS. Ahora todas las lecturas las hace el service worker, con el mismo `Origin` y `Referer` que
   la página, y sus fallos ya no aparecen en la consola de la página. Lo que se reconoce no cambia.
 - Pruebas: una nueva comprueba que ninguna lectura de la extensión deja una línea roja en la consola
-  de la página (46 de extremo a extremo más 5 opcionales, y 67 unitarias).
+  de la página (46 de extremo a extremo más 5 opcionales, y 67 unitarias). Además, las pruebas esperan
+  a que se abra la pestaña de bienvenida de la instalación y la cierran antes de empezar: en un Mac
+  lento de GitHub se abría ya empezada la primera prueba, pasaba por delante y dejaba el vídeo en segundo plano.
 
 ## 0.2.12 (2026-10-17)
 
