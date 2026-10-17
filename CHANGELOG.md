@@ -7,6 +7,18 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.13 (2026-10-17)
+
+- **La consola de la página ya no se llena de errores en rojo de la extensión.** Para reconocer un
+  vídeo, la extensión lee su lista de calidades, y lo hacía primero desde la propia página. Cada lectura
+  rechazada salía en la consola de la página como un error en rojo atribuido a `content.js`. Se
+  rechazaban, por ejemplo, la de un servidor que exige ser el reproductor (403) y la de la lista
+  maestra que la extensión prueba junto a una calidad suelta (404 si no está), además de los bloqueos
+  por CORS. Ahora todas las lecturas las hace el service worker, con el mismo `Origin` y `Referer` que
+  la página, y sus fallos ya no aparecen en la consola de la página. Lo que se reconoce no cambia.
+- Pruebas: una nueva comprueba que ninguna lectura de la extensión deja una línea roja en la consola
+  de la página (46 de extremo a extremo más 5 opcionales, y 67 unitarias).
+
 ## 0.2.12 (2026-10-17)
 
 - **Cada calidad de un HLS con su propio audio.** Algunas listas maestras dan a cada calidad su propio

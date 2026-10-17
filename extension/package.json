@@ -1,6 +1,6 @@
 {
   "name": "video-down-extension",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "private": true,
   "type": "module",
   "description": "Extensión de Chrome que detecta vídeos en la página y permite descargarlos en la resolución elegida.",

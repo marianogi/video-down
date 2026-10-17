@@ -55,21 +55,10 @@ export async function fetchResource(
     return response;
   }
 
-  // In a content script, first fetch from the page's own context: same Origin and Referer as
-  // the player, which CDNs that check them require (common with embedded players).
-  // If CORS or the server refuses it, fall back to the service worker, which can add them.
-  try {
-    const direct = await fetch(input, {
-      method: init?.method || "GET",
-      headers: init?.headers,
-      signal: init?.signal,
-      cache: init?.cache,
-    });
-    if (direct.ok) return direct;
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") throw err;
-  }
-
+  // In a content script, always ask the service worker: it sends the frame's Origin and Referer
+  // (withPageHeaders), which CDNs that check them require. A fetch from the page itself showed
+  // every refusal (a 403, a guessed master.m3u8 that is not there, CORS) as a red error in the
+  // page's console, blamed on content.js.
   return new Promise((resolve, reject) => {
     // Convert input to string URL
     const url = typeof input === "string" ? input : input.href;
@@ -98,6 +87,7 @@ export async function fetchResource(
               ? Array.from(new Uint8Array(bodyArrayBuffer))
               : null,
             mode: init?.mode,
+            cache: init?.cache,
           },
         },
       },

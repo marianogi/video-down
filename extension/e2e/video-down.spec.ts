@@ -770,6 +770,34 @@ test("the page's own failures stay its own: none is reported at the extension's 
   await cdp.detach();
 });
 
+test("the extension's own reads leave no red line in the page's console", async ({ page, baseUrl }) => {
+  // Detection read playlists from the page itself first: a refused one (403) or a guessed
+  // master.m3u8 that is not there (404) was shown in red in the page's console, blamed on content.js.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Network.enable");
+  const fromExtension = new Map<string, string>();
+  const failed: string[] = [];
+  cdp.on("Network.requestWillBeSent", (e) => {
+    if (JSON.stringify(e.initiator).includes("chrome-extension://")) fromExtension.set(e.requestId, e.request.url);
+  });
+  cdp.on("Network.responseReceived", (e) => {
+    const url = fromExtension.get(e.requestId);
+    if (url && e.response.status >= 400) failed.push(`${e.response.status} ${url}`);
+  });
+  cdp.on("Network.loadingFailed", (e) => {
+    const url = fromExtension.get(e.requestId);
+    if (url) failed.push(`${e.errorText} ${url}`);
+  });
+  // A variant without its master next to it (404 for the guess) and a CDN that wants the Referer (403).
+  for (const name of ["hls-aes.html", "live-guarded.html"]) {
+    await page.goto(`${baseUrl}/${name}`);
+    await expect(hub(page)).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(1500);
+  }
+  expect(failed, failed.join("\n")).toEqual([]);
+  await cdp.detach();
+});
+
 test("tiny decorative videos get no icon", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/tiny.html`);
   await page.waitForTimeout(1500);

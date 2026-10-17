@@ -976,7 +976,7 @@ async function clearFinished(): Promise<{ success: boolean }> {
 async function handleFetchResource(
   payload: {
     input: string;
-    init: { method?: string; headers?: Record<string, string>; body?: number[]; mode?: RequestMode };
+    init: { method?: string; headers?: Record<string, string>; body?: number[]; mode?: RequestMode; cache?: RequestCache };
   },
   frameUrl?: string,
 ): Promise<[{ body: number[]; status: number; statusText: string; headers: Record<string, string> } | null, Error | null]> {
@@ -990,6 +990,7 @@ async function handleFetchResource(
         method,
         headers: init.headers || {},
         credentials: "include",
+        ...(init.cache === "no-store" ? { cache: "no-store" as const } : {}),
         signal: AbortSignal.timeout(20_000),
       });
       return { response: r, buffer: await r.arrayBuffer() };
