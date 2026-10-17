@@ -7,6 +7,25 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.14 (2026-10-17)
+
+- **Al actualizar la extensión, las pestañas abiertas siguen funcionando sin recargarlas.** Chrome deja en
+  cada pestaña abierta los scripts de la versión anterior, pero desconectados de la extensión. Su icono
+  seguía ahí y su menú salía con las claves internas de los textos (`menuTitle`, `needNativeTitle`…) y un
+  aviso falso de que hacía falta el componente nativo. Además, la consola mostraba
+  `Extension context invalidated` en `content.js` cada vez que el reproductor leía una lista. Ahora:
+  - Un script desconectado se retira solo: quita su icono, sus escuchas y sus temporizadores sin un error.
+  - Al instalarse o actualizarse, la extensión pone sus scripts en las pestañas ya abiertas. Para ello
+    pide el permiso `scripting`, que solo usa en ese momento.
+  - La versión nueva recupera las listas que la página ya había pedido (en el registro de recursos de la
+    página), así que el menú ofrece las mismas calidades que si se hubiera recargado.
+  - Con pestañas abiertas en la 0.2.13 o anteriores, cuyos scripts no saben retirarse, el icono viejo
+    queda oculto y los avisos de la página ya no les llegan.
+- Pruebas: una nueva actualiza la extensión con una página abierta y comprueba que queda un solo icono,
+  que el menú ofrece las calidades y que no hay ningún error (47 de extremo a extremo más 5 opcionales,
+  y 67 unitarias). Se ha comprobado también con el paquete real de la 0.2.13: su icono queda oculto y no
+  hay errores.
+
 ## 0.2.13 (2026-10-17)
 
 - **La consola de la página ya no se llena de errores en rojo de la extensión.** Para reconocer un

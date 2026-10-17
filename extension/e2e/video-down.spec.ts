@@ -8,7 +8,7 @@
 import { test as base, expect, chromium, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -804,6 +804,60 @@ test("the extension's own reads leave no red line in the page's console", async 
   }
   expect(failed, failed.join("\n")).toEqual([]);
   await cdp.detach();
+});
+
+test("an update with the page open: the old copy retires in silence and the new one works without reloading", async ({ baseUrl }) => {
+  // Chrome leaves the previous version's scripts running in open pages, cut off from the
+  // extension: their menu showed the keys of its texts, and the console an error at each playlist
+  // the player read. Its own browser: the extension is loaded, and loaded again, through CDP.
+  const root = mkdtempSync(join(tmpdir(), "video-down-e2e-update-"));
+  const ext = join(root, "extension");
+  cpSync(EXTENSION, ext, { recursive: true });
+  const context = await chromium.launchPersistentContext(join(root, "profile"), {
+    channel: "chromium",
+    headless: true,
+    locale: "en-US",
+    ignoreDefaultArgs: ["--disable-extensions"],
+    args: ["--enable-unsafe-extension-debugging", "--lang=en-US"],
+  });
+  try {
+    const browserCdp = await context.browser()!.newBrowserCDPSession();
+    await browserCdp.send("Extensions.loadUnpacked", { path: ext });
+    // The welcome tab of the install, out of the way (see the extContext fixture).
+    for (const deadline = Date.now() + 15_000; Date.now() < deadline; await new Promise((r) => setTimeout(r, 100))) {
+      const welcome = context.pages().find((p) => p.url().includes("options.html"));
+      if (welcome) {
+        await welcome.close();
+        break;
+      }
+    }
+    const page = await context.newPage();
+    const errors: string[] = [];
+    const cdp = await context.newCDPSession(page);
+    cdp.on("Runtime.exceptionThrown", (e) => errors.push((e.exceptionDetails.exception?.description ?? e.exceptionDetails.text).split("\n")[0]));
+    await cdp.send("Runtime.enable");
+    await page.goto(`${baseUrl}/hls.html`);
+    await expect(hub(page)).toBeVisible({ timeout: 15_000 });
+    await page.evaluate(() => document.querySelector("video-down-overlay")?.setAttribute("data-old", ""));
+
+    // The update: the same folder loaded again.
+    await browserCdp.send("Extensions.loadUnpacked", { path: ext });
+    // The old copy took its icon away; the new one, injected into the open page, drew its own.
+    await expect
+      .poll(() => page.evaluate(() => [...document.querySelectorAll("video-down-overlay")].map((h) => h.hasAttribute("data-old"))), { timeout: 15_000 })
+      .toEqual([false]);
+    // The player keeps reading playlists and the page-world script keeps reporting them.
+    await page.evaluate(() =>
+      document.dispatchEvent(new CustomEvent("video-down:manifest", { detail: JSON.stringify({ url: `${location.origin}/media/x.m3u8`, kind: "hls" }) })),
+    );
+    // The master was read before the update: found again in the page's resource timing.
+    await openDownload(page);
+    await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+    expect(errors, errors.join("\n")).toEqual([]);
+  } finally {
+    await context.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("tiny decorative videos get no icon", async ({ page, baseUrl }) => {

@@ -1203,8 +1203,31 @@ async function cleanupStaleState(): Promise<void> {
 }
 
 chrome.runtime.onStartup.addListener(() => void cleanupStaleState().catch((e) => logger.error("cleanup", e)));
+/**
+ * Pages open before this version was installed run no script of it: the previous version's copies
+ * are cut off from the extension and retire (see content.ts). Give those pages this version's
+ * scripts now, so their videos keep their icon without reloading them.
+ */
+async function injectIntoOpenTabs(): Promise<void> {
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  for (const tab of tabs) {
+    if (tab.id === undefined || tab.discarded) continue;
+    const target = { tabId: tab.id, allFrames: true };
+    try {
+      // The page-world script first (it does nothing if an earlier version's is still there).
+      await chrome.scripting.executeScript({ target, files: ["main-world.js"], world: "MAIN", injectImmediately: true });
+      await chrome.scripting.executeScript({ target, files: ["content.js"], injectImmediately: true });
+    } catch {
+      // A page extensions may not enter (the Web Store, an error page…).
+    }
+  }
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
   void cleanupStaleState().catch((e) => logger.error("cleanup", e));
+  if (details.reason === "install" || details.reason === "update") {
+    void injectIntoOpenTabs().catch((e) => logger.warn("inject into open tabs", e));
+  }
   if (details.reason === "install") {
     void chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html#welcome") });
   }

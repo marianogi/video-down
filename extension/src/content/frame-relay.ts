@@ -110,14 +110,24 @@ export class CoverLifter {
   /** This document has the pointer, so no child frame does */
   private pointerHere = false;
   private giveUp: ReturnType<typeof setTimeout> | null = null;
+  private readonly lifetime = new AbortController();
 
   constructor() {
+    const { signal } = this.lifetime;
     document.addEventListener("pointermove", (e) => this.onPointer(e.clientX, e.clientY), {
       capture: true,
       passive: true,
+      signal,
     });
     // The pointer left the window: nothing of ours can be under it.
-    document.documentElement.addEventListener("pointerleave", () => this.pointerAway());
+    document.documentElement.addEventListener("pointerleave", () => this.pointerAway(), { signal });
+  }
+
+  /** The extension is gone (see content.ts): put every layer back and stop listening. */
+  destroy(): void {
+    this.lifetime.abort();
+    this.restore();
+    this.children.clear();
   }
 
   onChildUi(source: Window, ui: FrameUi): void {

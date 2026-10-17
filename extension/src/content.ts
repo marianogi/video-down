@@ -19,6 +19,11 @@ import type { DetectionFailure } from "./core/detection/detection-failure";
 
 const FLAG = "__videoDownContent";
 const g = globalThis as unknown as Record<string, unknown>;
+/**
+ * Sent by each new copy of this script. A copy from before an update of the extension, cut off
+ * from it, retires on hearing it (see retired() in main()).
+ */
+const RETIRE_EVENT = "video-down:retire";
 
 /**
  * When the address changes, media detected up to this long before the change still counts as
@@ -34,6 +39,19 @@ if (!g[FLAG]) {
   void main();
 }
 
+/**
+ * False once the extension this script belongs to was reloaded, updated or removed while the page
+ * stayed open. Chrome leaves the script running but cuts it off: every call to the extension then
+ * throws "Extension context invalidated", and chrome.i18n answers every text with nothing.
+ */
+function connected(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
 async function main(): Promise<void> {
   const media = new Map<string, VideoMetadata>();
   const bodies = new PlaylistBodies();
@@ -41,6 +59,32 @@ async function main(): Promise<void> {
   let detection: DetectionManager | null = null;
   let nativeCache: { value: boolean; at: number } | null = null;
   let settings: Awaited<ReturnType<typeof loadSettings>> | null = null;
+  // A child frame's icons that this page may cover (see content/frame-relay.ts). The lifter is
+  // only created once some child frame has icons.
+  let coverLifter: CoverLifter | null = null;
+  let addressTimer: ReturnType<typeof setInterval> | undefined;
+
+  // Cut off from its extension (see connected()), this copy takes its icons, listeners and timers
+  // off the page instead of failing at every event of it: the menu showed its texts' keys, and the
+  // console an error at each playlist the player read. The service worker injects the new version
+  // into the pages already open, and its first act is to tell older copies (RETIRE_EVENT).
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  function retired(): boolean {
+    if (signal.aborted) return true;
+    if (connected()) return false;
+    lifetime.abort();
+    clearInterval(addressTimer);
+    overlay?.destroy();
+    overlay = null;
+    coverLifter?.destroy();
+    coverLifter = null;
+    detection?.destroy();
+    detection = null;
+    return true;
+  }
+  document.addEventListener(RETIRE_EVENT, () => void retired(), { signal });
+  document.dispatchEvent(new Event(RETIRE_EVENT));
 
   /** Note for the diagnostic report. Never blocks and never fails. */
   function diag(event: string, url?: string, detail?: string): void {
@@ -141,10 +185,14 @@ async function main(): Promise<void> {
   async function isNativeAvailable(): Promise<boolean> {
     if (nativeCache && Date.now() - nativeCache.at < 30_000) return nativeCache.value;
     const reply = await new Promise<NativeStatusReply | undefined>((resolve) => {
-      chrome.runtime.sendMessage({ type: MessageType.NATIVE_STATUS }, (r: NativeStatusReply) => {
-        if (chrome.runtime.lastError) resolve(undefined);
-        else resolve(r);
-      });
+      try {
+        chrome.runtime.sendMessage({ type: MessageType.NATIVE_STATUS }, (r: NativeStatusReply) => {
+          if (chrome.runtime.lastError) resolve(undefined);
+          else resolve(r);
+        });
+      } catch {
+        resolve(undefined); // cut off from the extension (see connected())
+      }
     });
     const value = !!reply?.installed;
     nativeCache = { value, at: Date.now() };
@@ -172,7 +220,18 @@ async function main(): Promise<void> {
   // (see content/main-world.ts), with their text when it was read whole. That world belongs to
   // the page, so a report is only used if the service worker confirms the page really
   // requested that URL.
-  document.addEventListener("video-down:manifest", (event) => {
+  // Taken on the window, before the document, and stopped there: copies of this script from 0.2.13
+  // or earlier listen on the document and, cut off by an update, threw at each report.
+  window.addEventListener(
+    "video-down:manifest",
+    (event) => {
+      if (retired()) return;
+      event.stopImmediatePropagation();
+      onManifest(event);
+    },
+    { capture: true, signal },
+  );
+  function onManifest(event: Event): void {
     let info: { url?: unknown; kind?: unknown; text?: unknown };
     try {
       info = JSON.parse(String((event as CustomEvent).detail));
@@ -189,11 +248,8 @@ async function main(): Promise<void> {
       refreshUrl(url);
       feed(url, hint);
     });
-  });
+  }
 
-  // A child frame's icons that this page may cover (see content/frame-relay.ts). The lifter is
-  // only created once some child frame has icons.
-  let coverLifter: CoverLifter | null = null;
   window.addEventListener("message", (event) => {
     const data: unknown = event.data;
     if (typeof data !== "object" || data === null) return;
@@ -207,7 +263,7 @@ async function main(): Promise<void> {
     if (!source || !ui || (!coverLifter && ui.rects.length === 0)) return;
     coverLifter ??= new CoverLifter();
     coverLifter.onChildUi(source, ui);
-  });
+  }, { signal });
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === MessageType.NETWORK_URL_DETECTED) {
@@ -239,6 +295,12 @@ async function main(): Promise<void> {
   // Only trust a positive answer: "false" may just mean "not checked yet".
   if (ready?.nativeAvailable) nativeCache = { value: true, at: Date.now() };
   startDetection(ready?.pending ?? []);
+  // Injected into a page that was already open (the extension was just installed or updated): the
+  // playlists its player read before are not among what the service worker saw, but they are in
+  // the page's resource timing.
+  for (const entry of performance.getEntriesByType("resource").slice(-300)) {
+    if (/^https?:/i.test(entry.name) && /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(entry.name)) feed(entry.name);
+  }
 
   // ------------------------------------------------------------ address changes
 
@@ -312,7 +374,7 @@ async function main(): Promise<void> {
   // (e.g. the Navigation API) is caught by polling.
   let lastUrl = location.href;
   function checkAddress(): void {
-    if (location.href === lastUrl) return;
+    if (retired() || location.href === lastUrl) return;
     lastUrl = location.href;
     navigatedAt = Date.now();
     diag("navigation", location.href);
@@ -325,8 +387,17 @@ async function main(): Promise<void> {
       dropStale(previous, at - NAV_SLACK_MS);
     }
   }
-  document.addEventListener("video-down:navigation", checkAddress);
-  setInterval(checkAddress, 1000);
+  // On the window and stopped there, like the playlist reports above.
+  window.addEventListener(
+    "video-down:navigation",
+    (event) => {
+      if (retired()) return;
+      event.stopImmediatePropagation();
+      checkAddress();
+    },
+    { capture: true, signal },
+  );
+  addressTimer = setInterval(checkAddress, 1000);
 }
 
 function looksLike(text: string, format: VideoFormat): boolean {

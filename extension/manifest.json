@@ -16,7 +16,8 @@
     "notifications",
     "offscreen",
     "nativeMessaging",
-    "cookies"
+    "cookies",
+    "scripting"
   ],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {

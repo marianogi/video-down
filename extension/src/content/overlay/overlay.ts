@@ -134,6 +134,11 @@ const SIGHT_MS = 300;
 /** Pixels around the icon that still count as over it (a pointer resting on its edge). */
 const HOVER_MARGIN = 4;
 const OFFSET = 8;
+/**
+ * Marks the layer of a script that retires on its own when its extension is reloaded or updated
+ * (see destroy()). Layers without it were left by 0.2.13 or earlier, whose scripts never retire.
+ */
+const LIVE_ATTR = "data-video-down";
 const FINISHED = new Set<DownloadStage>([DownloadStage.COMPLETED, DownloadStage.FAILED, DownloadStage.CANCELLED]);
 
 function send<T>(type: MessageType, payload?: unknown): Promise<T> {
@@ -219,9 +224,12 @@ export class Overlay {
    * reply that names its job arrives here; that last update must not be lost.
    */
   private readonly earlyProgress = new Map<string, { push: ProgressPush; at: number }>();
+  /** Aborted by destroy(): removes every listener this layer added to the page */
+  private readonly lifetime = new AbortController();
 
   constructor(private readonly deps: OverlayDeps) {
     this.host = document.createElement("video-down-overlay");
+    this.host.setAttribute(LIVE_ATTR, "");
     // Closed in production so pages cannot reach the UI; the e2e build opens it for Playwright.
     this.root = this.host.attachShadow({ mode: __VD_SHADOW_MODE__ });
     const style = document.createElement("style");
@@ -239,31 +247,41 @@ export class Overlay {
   // ------------------------------------------------------------ lifecycle
 
   start(): void {
+    const { signal } = this.lifetime;
+    this.hideStaleLayers();
     this.attachHost();
     this.scan();
     this.mutationObserver = new MutationObserver(() => this.scheduleScan());
     this.mutationObserver.observe(document.documentElement, { childList: true, subtree: true });
 
     const onViewportChange = () => this.scheduleLayout();
-    window.addEventListener("scroll", onViewportChange, { capture: true, passive: true });
-    window.addEventListener("resize", onViewportChange, { passive: true });
-    document.addEventListener("fullscreenchange", () => {
-      this.attachHost();
-      this.scheduleLayout();
-    });
+    window.addEventListener("scroll", onViewportChange, { capture: true, passive: true, signal });
+    window.addEventListener("resize", onViewportChange, { passive: true, signal });
+    document.addEventListener(
+      "fullscreenchange",
+      () => {
+        this.attachHost();
+        this.scheduleLayout();
+      },
+      { signal },
+    );
     document.addEventListener(
       "pointermove",
       (e) => {
         this.pointer = { x: e.clientX, y: e.clientY };
         this.scheduleLayout();
       },
-      { passive: true, capture: true },
+      { passive: true, capture: true, signal },
     );
     // The pointer left the page (or this frame): nothing is hovered any more.
-    document.documentElement.addEventListener("pointerleave", () => {
-      this.pointer = { x: -1, y: -1 };
-      this.scheduleLayout();
-    });
+    document.documentElement.addEventListener(
+      "pointerleave",
+      () => {
+        this.pointer = { x: -1, y: -1 };
+        this.scheduleLayout();
+      },
+      { signal },
+    );
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       if (this.openKey) {
@@ -277,7 +295,7 @@ export class Overlay {
           tr.hub.focus();
         }
       }
-    }, true);
+    }, { capture: true, signal });
     document.addEventListener(
       "pointerdown",
       (e) => {
@@ -285,10 +303,42 @@ export class Overlay {
         if (e.composedPath().includes(this.host)) return;
         this.close(false);
       },
-      true,
+      { capture: true, signal },
     );
     // Some layouts move videos without resizing them (carousels, sticky players).
     this.intervalId = setInterval(() => this.scheduleLayout(), 750);
+  }
+
+  /**
+   * The extension was reloaded, updated or removed: take everything off the page. Nothing of this
+   * layer may call the extension again, and the next version draws its own (see content.ts).
+   */
+  destroy(): void {
+    if (this.lifetime.signal.aborted) return;
+    this.lifetime.abort();
+    this.mutationObserver?.disconnect();
+    this.resizeObserver.disconnect();
+    if (this.intervalId) clearInterval(this.intervalId);
+    if (this.scanTimer) clearTimeout(this.scanTimer);
+    if (this.pendingRetry) clearTimeout(this.pendingRetry);
+    for (const tr of this.tracked.values()) {
+      if (tr.prefetchTimer) clearTimeout(tr.prefetchTimer);
+      if (tr.collapseTimer) clearTimeout(tr.collapseTimer);
+    }
+    this.tracked.clear();
+    this.openKey = null;
+    this.host.remove();
+  }
+
+  /**
+   * Icons left by 0.2.13 or earlier, whose script lost its extension on an update: hidden, since
+   * that script puts its layer back whenever it is removed.
+   */
+  private hideStaleLayers(): void {
+    if (!document.querySelector(`video-down-overlay:not([${LIVE_ATTR}])`)) return;
+    const style = document.createElement("style");
+    style.textContent = `video-down-overlay:not([${LIVE_ATTR}]){display:none!important}`;
+    document.documentElement.appendChild(style);
   }
 
   /** Called when the media list of the frame changes. */
@@ -379,7 +429,7 @@ export class Overlay {
   }
 
   private scheduleScan(): void {
-    if (this.scanTimer) return;
+    if (this.scanTimer || this.lifetime.signal.aborted) return;
     this.scanTimer = setTimeout(() => {
       this.scanTimer = null;
       this.scan();
@@ -516,20 +566,29 @@ export class Overlay {
       tr.lastDuration = NaN;
       this.deps.onVideoLoad(previous);
     };
-    video.addEventListener("durationchange", () => {
-      const d = video.duration;
-      if (Number.isFinite(d) && tr.lastDuration > 0 && d > tr.lastDuration + 1) {
-        tr.durationGrowths++;
-        if (tr.durationGrowths === LIVE_GROWTHS) this.scheduleLayout();
-      }
-      if (Number.isFinite(d)) tr.lastDuration = d;
-    });
-    video.addEventListener("loadstart", onLoadStart);
-    video.addEventListener("emptied", onLoadStart);
-    video.addEventListener("video-down:drm", () => {
-      this.updateDrmState(tr);
-      if (this.openKey === key) void this.renderRoute(tr);
-    });
+    const { signal } = this.lifetime;
+    video.addEventListener(
+      "durationchange",
+      () => {
+        const d = video.duration;
+        if (Number.isFinite(d) && tr.lastDuration > 0 && d > tr.lastDuration + 1) {
+          tr.durationGrowths++;
+          if (tr.durationGrowths === LIVE_GROWTHS) this.scheduleLayout();
+        }
+        if (Number.isFinite(d)) tr.lastDuration = d;
+      },
+      { signal },
+    );
+    video.addEventListener("loadstart", onLoadStart, { signal });
+    video.addEventListener("emptied", onLoadStart, { signal });
+    video.addEventListener(
+      "video-down:drm",
+      () => {
+        this.updateDrmState(tr);
+        if (this.openKey === key) void this.renderRoute(tr);
+      },
+      { signal },
+    );
     this.updateDrmState(tr);
     this.tracked.set(key, tr);
     this.byVideo.set(video, tr);
@@ -569,7 +628,7 @@ export class Overlay {
   // ------------------------------------------------------------ layout
 
   private scheduleLayout(): void {
-    if (this.layoutQueued) return;
+    if (this.layoutQueued || this.lifetime.signal.aborted) return;
     this.layoutQueued = true;
     requestAnimationFrame(() => {
       this.layoutQueued = false;
