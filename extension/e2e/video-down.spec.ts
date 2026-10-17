@@ -844,7 +844,7 @@ test("an update with the page open: the old copy retires in silence and the new 
     await browserCdp.send("Extensions.loadUnpacked", { path: ext });
     // The old copy took its icon away; the new one, injected into the open page, drew its own.
     await expect
-      .poll(() => page.evaluate(() => [...document.querySelectorAll("video-down-overlay")].map((h) => h.hasAttribute("data-old"))), { timeout: 15_000 })
+      .poll(() => page.evaluate(() => [...document.querySelectorAll("video-down-overlay")].map((h) => h.hasAttribute("data-old"))), { timeout: 20_000 })
       .toEqual([false]);
     // The player keeps reading playlists and the page-world script keeps reporting them.
     await page.evaluate(() =>

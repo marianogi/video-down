@@ -7,7 +7,9 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
-## 0.2.14 (2026-10-17)
+## 0.2.15 (2026-10-17)
+
+La 0.2.14 no llegó a publicarse: su verificación en macOS encontró el fallo que corrige el último punto.
 
 - **Al actualizar la extensión, las pestañas abiertas siguen funcionando sin recargarlas.** Chrome deja en
   cada pestaña abierta los scripts de la versión anterior, pero desconectados de la extensión. Su icono
@@ -21,6 +23,10 @@ En `chrome://extensions`, las compilaciones que no son de publicación aparecen 
     página), así que el menú ofrece las mismas calidades que si se hubiera recargado.
   - Con pestañas abiertas en la 0.2.13 o anteriores, cuyos scripts no saben retirarse, el icono viejo
     queda oculto y los avisos de la página ya no les llegan.
+  - Chrome puede anunciar la actualización mientras aún desmonta los scripts viejos. Un script inyectado
+    en ese momento caía entre ellos y desaparecía con ellos, y la pestaña se quedaba sin icono (visto en
+    macOS). Ahora la extensión pregunta a cada marco si ya tiene un script en marcha, inyecta solo donde
+    falta y repite la comprobación durante los primeros segundos.
 - Pruebas: una nueva actualiza la extensión con una página abierta y comprueba que queda un solo icono,
   que el menú ofrece las calidades y que no hay ningún error (47 de extremo a extremo más 5 opcionales,
   y 67 unitarias). Se ha comprobado también con el paquete real de la 0.2.13: su icono queda oculto y no

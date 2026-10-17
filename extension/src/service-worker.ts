@@ -1207,18 +1207,30 @@ chrome.runtime.onStartup.addListener(() => void cleanupStaleState().catch((e) =>
  * Pages open before this version was installed run no script of it: the previous version's copies
  * are cut off from the extension and retire (see content.ts). Give those pages this version's
  * scripts now, so their videos keep their icon without reloading them.
+ *
+ * Only frames without a running copy get one: a copy already there makes content.js stop at once
+ * (its FLAG), but only after Chrome has evaluated the whole script. And Chrome may still be tearing
+ * down the old copies when it announces the update: a script injected then lands among them and is
+ * gone with them (seen on macOS). So this looks again a few times in the first seconds.
  */
 async function injectIntoOpenTabs(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
   for (const tab of tabs) {
     if (tab.id === undefined || tab.discarded) continue;
-    const target = { tabId: tab.id, allFrames: true };
     try {
+      const running = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => (globalThis as unknown as Record<string, unknown>).__videoDownContent === true,
+        injectImmediately: true,
+      });
+      const frameIds = running.filter((r) => r.result !== true).map((r) => r.frameId);
+      if (frameIds.length === 0) continue;
+      const target = { tabId: tab.id, frameIds };
       // The page-world script first (it does nothing if an earlier version's is still there).
       await chrome.scripting.executeScript({ target, files: ["main-world.js"], world: "MAIN", injectImmediately: true });
       await chrome.scripting.executeScript({ target, files: ["content.js"], injectImmediately: true });
     } catch {
-      // A page extensions may not enter (the Web Store, an error page…).
+      // A page extensions may not enter (the Web Store, an error page…), or a tab closed meanwhile.
     }
   }
 }
@@ -1226,7 +1238,9 @@ async function injectIntoOpenTabs(): Promise<void> {
 chrome.runtime.onInstalled.addListener((details) => {
   void cleanupStaleState().catch((e) => logger.error("cleanup", e));
   if (details.reason === "install" || details.reason === "update") {
-    void injectIntoOpenTabs().catch((e) => logger.warn("inject into open tabs", e));
+    for (const delay of [0, 1000, 3000, 7000]) {
+      setTimeout(() => void injectIntoOpenTabs().catch((e) => logger.warn("inject into open tabs", e)), delay);
+    }
   }
   if (details.reason === "install") {
     void chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html#welcome") });
