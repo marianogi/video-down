@@ -850,7 +850,7 @@ test("an update with the page open: the old copy retires in silence and the new 
         // What the service worker's injections did, for the record of the run.
         const log = await context.newPage();
         await log.goto(`chrome-extension://${id}/options/options.html`);
-        console.log("injections:", JSON.stringify(await log.evaluate(() => chrome.storage.session.get("injections"))));
+        console.log("session:", JSON.stringify(await log.evaluate(() => chrome.storage.session.get(null))), "now:", Date.now());
         throw err;
       });
     // The player keeps reading playlists and the page-world script keeps reporting them.

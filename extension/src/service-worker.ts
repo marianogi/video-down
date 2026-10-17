@@ -1241,13 +1241,23 @@ async function injectIntoOpenTabs(): Promise<void> {
   await chrome.storage.session.set({ injections: [...injections, ...notes].slice(-50) });
 }
 
-chrome.runtime.onInstalled.addListener((details) => {
-  void cleanupStaleState().catch((e) => logger.error("cleanup", e));
-  if (details.reason === "install" || details.reason === "update") {
+// Once per load of the extension (install, update, reload, enable), when this worker first starts:
+// session storage begins empty on each load. Not tied to onInstalled, which was seen not to arrive
+// on macOS when the extension was loaded again over itself.
+void chrome.storage.session
+  .get("loadedAt")
+  .then(async ({ loadedAt }) => {
+    if (loadedAt) return;
+    await chrome.storage.session.set({ loadedAt: Date.now() });
     for (const delay of [0, 1000, 3000, 7000]) {
       setTimeout(() => void injectIntoOpenTabs().catch((e) => logger.warn("inject into open tabs", e)), delay);
     }
-  }
+  })
+  .catch((e) => logger.warn("inject into open tabs", e));
+
+chrome.runtime.onInstalled.addListener((details) => {
+  void chrome.storage.session.set({ installed: { reason: details.reason, at: Date.now() } }).catch(() => undefined);
+  void cleanupStaleState().catch((e) => logger.error("cleanup", e));
   if (details.reason === "install") {
     void chrome.tabs.create({ url: chrome.runtime.getURL("options/options.html#welcome") });
   }
