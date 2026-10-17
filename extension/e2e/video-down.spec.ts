@@ -809,7 +809,9 @@ test("the extension's own reads leave no red line in the page's console", async 
 test("an update with the page open: the old copy retires in silence and the new one works without reloading", async ({ baseUrl }) => {
   // Chrome leaves the previous version's scripts running in open pages, cut off from the
   // extension: their menu showed the keys of its texts, and the console an error at each playlist
-  // the player read. Its own browser: the extension is loaded, and loaded again, through CDP.
+  // the player read. Its own browser, since the extension is reloaded: with the reload button of
+  // chrome://extensions, as after running the installer of a new version. (Loading it again over
+  // itself through CDP does not start the new worker on macOS: no onInstalled, nothing injected.)
   const root = mkdtempSync(join(tmpdir(), "video-down-e2e-update-"));
   const ext = join(root, "extension");
   cpSync(EXTENSION, ext, { recursive: true });
@@ -817,12 +819,11 @@ test("an update with the page open: the old copy retires in silence and the new 
     channel: "chromium",
     headless: true,
     locale: "en-US",
-    ignoreDefaultArgs: ["--disable-extensions"],
-    args: ["--enable-unsafe-extension-debugging", "--lang=en-US"],
+    args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, "--lang=en-US"],
   });
   try {
-    const browserCdp = await context.browser()!.newBrowserCDPSession();
-    const { id } = await browserCdp.send("Extensions.loadUnpacked", { path: ext });
+    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+    const id = new URL(worker.url()).host;
     // The welcome tab of the install, out of the way (see the extContext fixture).
     for (const deadline = Date.now() + 15_000; Date.now() < deadline; await new Promise((r) => setTimeout(r, 100))) {
       const welcome = context.pages().find((p) => p.url().includes("options.html"));
@@ -840,8 +841,13 @@ test("an update with the page open: the old copy retires in silence and the new 
     await expect(hub(page)).toBeVisible({ timeout: 15_000 });
     await page.evaluate(() => document.querySelector("video-down-overlay")?.setAttribute("data-old", ""));
 
-    // The update: the same folder loaded again.
-    await browserCdp.send("Extensions.loadUnpacked", { path: ext });
+    // The update: the reload button of its card, in developer mode.
+    const extensions = await context.newPage();
+    await extensions.goto("chrome://extensions");
+    await extensions.locator("#devMode").click();
+    await extensions.locator("#dev-reload-button").click();
+    await extensions.close();
+    await page.bringToFront();
     // The old copy took its icon away; the new one, injected into the open page, drew its own.
     await expect
       .poll(() => page.evaluate(() => [...document.querySelectorAll("video-down-overlay")].map((h) => h.hasAttribute("data-old"))), { timeout: 20_000 })

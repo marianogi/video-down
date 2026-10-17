@@ -9,8 +9,8 @@ En `chrome://extensions`, las compilaciones que no son de publicación aparecen 
 
 ## 0.2.16 (2026-10-17)
 
-La 0.2.14 y la 0.2.15 no llegaron a publicarse: su verificación en macOS encontró los dos fallos que
-corrigen los dos últimos puntos de la lista.
+La 0.2.14 y la 0.2.15 no llegaron a publicarse: su verificación en macOS encontró el fallo que corrige el
+último punto de la lista.
 
 - **Al actualizar la extensión, las pestañas abiertas siguen funcionando sin recargarlas.** Chrome deja en
   cada pestaña abierta los scripts de la versión anterior, pero desconectados de la extensión. Su icono
@@ -18,24 +18,24 @@ corrigen los dos últimos puntos de la lista.
   aviso falso de que hacía falta el componente nativo. Además, la consola mostraba
   `Extension context invalidated` en `content.js` cada vez que el reproductor leía una lista. Ahora:
   - Un script desconectado se retira solo: quita su icono, sus escuchas y sus temporizadores sin un error.
-  - Al instalarse o actualizarse, la extensión pone sus scripts en las pestañas ya abiertas. Para ello
-    pide el permiso `scripting`, que solo usa en ese momento.
+  - Al instalarse, actualizarse o recargarse, la extensión pone sus scripts en las pestañas ya abiertas, una
+    vez por carga y al arrancar su service worker. Pregunta antes a cada marco si ya tiene un script en
+    marcha y solo lo pone donde falta. Lo repite durante los primeros segundos, por si Chrome aún no ha
+    desmontado los scripts viejos. Para ello pide el permiso `scripting`, que solo usa en ese momento.
   - La versión nueva recupera las listas que la página ya había pedido (en el registro de recursos de la
     página), así que el menú ofrece las mismas calidades que si se hubiera recargado.
   - Con pestañas abiertas en la 0.2.13 o anteriores, cuyos scripts no saben retirarse, el icono viejo
     queda oculto y los avisos de la página ya no les llegan.
-  - Chrome puede anunciar la actualización mientras aún desmonta los scripts viejos. Un script inyectado
-    en ese momento caía entre ellos y desaparecía con ellos, y la pestaña se quedaba sin icono (visto en
-    macOS). Ahora la extensión pregunta a cada marco si ya tiene un script en marcha, inyecta solo donde
-    falta y repite la comprobación durante los primeros segundos.
   - El script que se retiraba quitaba su icono, pero un repintado pedido justo antes lo volvía a poner, y
     en una pestaña en segundo plano eso pasaba al volver a ella. Además, dejaba puesta su marca de «ya
     hay un script aquí». Ahora un repintado pendiente no hace nada tras la retirada, y la marca se quita
     para que la versión nueva pueda entrar.
-- Pruebas: una nueva actualiza la extensión con una página abierta y comprueba que queda un solo icono,
-  que el menú ofrece las calidades y que no hay ningún error (47 de extremo a extremo más 5 opcionales,
-  y 67 unitarias). Se ha comprobado también con el paquete real de la 0.2.13: su icono queda oculto y no
-  hay errores.
+- Pruebas: una nueva recarga la extensión con el botón de `chrome://extensions` con una página abierta,
+  como tras ejecutar el instalador. Comprueba que queda un solo icono, que el menú ofrece las calidades y
+  que no hay ningún error (47 de extremo a extremo más 5 opcionales, y 67 unitarias). La primera versión
+  de esa prueba recargaba la extensión por el protocolo de depuración, y en macOS eso no arranca el
+  service worker nuevo. Se ha comprobado también con el paquete real de la 0.2.13: su icono queda oculto
+  y no hay errores.
 
 ## 0.2.13 (2026-10-17)
 
