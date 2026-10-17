@@ -875,13 +875,12 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.11, 16/10/2026)
+### Estado de verificación (versión 0.2.12, 17/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.10; extensión y componente nativo en 0.2.11 | Correcto |
-| Windows 11 | Las 50 pruebas de extremo a extremo, incluida YouTube real | 50 de 50 |
-| Windows 11, Chromium de prueba con la extensión de IDM cargada | Nombre del fichero de una grabación, descargado a una carpeta temporal | Sin el cambio, un código (`2c21cb6f-….mp4`); con él, el nombre de la grabación |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.11; extensión y componente nativo en 0.2.12 | Correcto |
+| Windows 11 | Las 50 pruebas de extremo a extremo, incluida YouTube real, y las 67 unitarias (una con la lista maestra real de un vídeo de X) | 50 de 50 y 67 de 67 |
 | macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 49 de 49 (YouTube no se ejecuta en GitHub) |
 | Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 49 de 49 (YouTube no se ejecuta en GitHub) |
 
