@@ -875,14 +875,14 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.12, 17/10/2026)
+### Estado de verificación (versión 0.2.13, 17/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.11; extensión y componente nativo en 0.2.12 | Correcto |
-| Windows 11 | Las 50 pruebas de extremo a extremo, incluida YouTube real, y las 67 unitarias (una con la lista maestra real de un vídeo de X) | 50 de 50 y 67 de 67 |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 49 de 49 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 49 de 49 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.12; extensión y componente nativo en 0.2.13 | Correcto |
+| Windows 11 | Las 51 pruebas de extremo a extremo, incluida YouTube real, y las 67 unitarias. Una de extremo a extremo es nueva: comprueba que ninguna lectura de la extensión deja una línea roja en la consola de la página | 51 de 51 y 67 de 67 |
+| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 50 de 50 (YouTube no se ejecuta en GitHub) |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 50 de 50 (YouTube no se ejecuta en GitHub) |
 
 El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas: se ha comprobado
 la ruta que Chrome decide sin diálogo, no el diálogo en sí.
