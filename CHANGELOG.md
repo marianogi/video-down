@@ -7,6 +7,16 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.12 (2026-10-17)
+
+- **Cada calidad de un HLS con su propio audio.** Algunas listas maestras dan a cada calidad su propio
+  grupo de audio. X, por ejemplo, da 32 kbps a la de 270p, 64 kbps a la de 360p y 128 kbps a las de
+  720p en adelante. La extensión emparejaba todas con el primer audio de la lista, el peor, así que un
+  vídeo de X en 720p salía con el sonido a 32 kbps. Ahora cada calidad usa el audio del grupo que
+  indica su propia línea (`AUDIO=`), o el marcado por defecto dentro de ese grupo. Vale para las
+  descargas, para la copia exacta de directos y para la elección automática del motor de descarga.
+- Pruebas: unitaria con la lista maestra real de un vídeo público de X (67 en total).
+
 ## 0.2.11 (2026-10-16)
 
 - **«Guardar como…» propone el nombre de la grabación, no un código.** El diálogo proponía un código

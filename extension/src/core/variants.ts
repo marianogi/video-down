@@ -3,7 +3,7 @@
  * download by itself (HLS and DASH manifests). Pure: unit-tested with fixtures.
  */
 
-import { parseMasterPlaylist, isMasterPlaylist } from "./parsers/m3u8-parser";
+import { parseMasterPlaylist, isMasterPlaylist, audioFor } from "./parsers/m3u8-parser";
 import { parseManifest } from "./parsers/mpd-parser";
 import { VideoFormat } from "./types";
 
@@ -60,7 +60,6 @@ export function hlsVariants(playlistText: string, playlistUrl: string, duration?
     return [{ id: "original", label: "original" }];
   }
   const levels = parseMasterPlaylist(playlistText, playlistUrl);
-  const audio = levels.find((l) => l.type === "audio");
   const seenUris = new Set<string>();
   const video = levels.filter((l) => {
     if (l.type !== "stream" || seenUris.has(l.uri)) return false;
@@ -73,13 +72,14 @@ export function hlsVariants(playlistText: string, playlistUrl: string, duration?
     width: l.width,
     bandwidth: l.bitrate,
     uri: l.uri,
+    audioUri: audioFor(levels, l)?.uri ?? null,
   }));
 
   return dedupeByHeight(candidates).map((c) => {
     const v: BrowserVariant = {
       id: `h${c.height ?? 0}-${c.bandwidth ?? 0}`,
       label: c.height ? `${c.height}p` : c.bandwidth ? bitrateLabel(c.bandwidth) : "original",
-      manifestQuality: { videoPlaylistUrl: c.uri, audioPlaylistUrl: audio?.uri ?? null },
+      manifestQuality: { videoPlaylistUrl: c.uri, audioPlaylistUrl: c.audioUri },
     };
     if (c.height) v.height = c.height;
     if (c.width) v.width = c.width;

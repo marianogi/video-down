@@ -148,5 +148,10 @@ export interface Level {
   fps?: number;
   height?: number;
   width?: number;
+  /** A variant: the GROUP-ID of the audio it is meant to play with (its AUDIO attribute) */
+  audioGroup?: string;
+  /** An audio rendition: its GROUP-ID, and whether it is the group's DEFAULT */
+  groupId?: string;
+  isDefault?: boolean;
 }
 

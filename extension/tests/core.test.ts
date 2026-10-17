@@ -561,3 +561,18 @@ describe("texts of the extension's own pages", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------- audio of each quality
+
+describe("HLS audio paired with each quality", () => {
+  it("uses the audio group each variant names (X gives 32, 64 and 128 kbps)", () => {
+    const url = "https://video.twimg.com/amplify_video/2039532852929310720/pl/efX7irkUSKsFtEqx.m3u8?tag=21&v=59e";
+    const variants = hlsVariants(fixture("x-master-audio-groups.m3u8"), url, 30);
+    const audioOf = (label: string) => variants.find((v) => v.label === label)?.manifestQuality?.audioPlaylistUrl ?? "";
+    expect(variants.map((v) => v.label)).toEqual(["2160p", "1080p", "720p", "360p", "270p"]);
+    expect(audioOf("720p")).toMatch(/\/mp4a\/128000\//);
+    expect(audioOf("1080p")).toMatch(/\/mp4a\/128000\//);
+    expect(audioOf("360p")).toMatch(/\/mp4a\/64000\//);
+    expect(audioOf("270p")).toMatch(/\/mp4a\/32000\//);
+  });
+});

@@ -101,6 +101,7 @@ export function parseMasterPlaylist(
     fps: playlist.attributes["FRAME-RATE"],
     height: playlist.attributes.RESOLUTION?.height,
     width: playlist.attributes.RESOLUTION?.width,
+    ...(typeof playlist.attributes.AUDIO === "string" ? { audioGroup: playlist.attributes.AUDIO } : {}),
   }));
 
   // Parse audio playlists. An EXT-X-MEDIA without URI is legal (RFC 8216 §4.3.4.1): that audio
@@ -118,12 +119,26 @@ export function parseMasterPlaylist(
           fps: undefined,
           width: undefined,
           height: undefined,
+          groupId: key,
+          isDefault: entry.default === true,
         };
       });
     },
   );
 
   return [...streamLevels, ...audioLevels];
+}
+
+/**
+ * The audio a variant is meant to play with: a rendition of the group its AUDIO attribute names
+ * (the group's DEFAULT, else its first), else the master's first audio. Masters that give each
+ * quality its own audio group (X: 32, 64 and 128 kbps) were all paired with the first, the worst.
+ */
+export function audioFor(levels: Level[], stream: Level | undefined): Level | null {
+  const audios = levels.filter((l) => l.type === "audio");
+  const inGroup = stream?.audioGroup ? audios.filter((a) => a.groupId === stream.audioGroup) : [];
+  const pool = inGroup.length > 0 ? inGroup : audios;
+  return pool.find((a) => a.isDefault) ?? pool[0] ?? null;
 }
 
 /**

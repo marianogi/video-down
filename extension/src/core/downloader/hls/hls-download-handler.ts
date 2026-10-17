@@ -13,6 +13,7 @@ import { throwIfAborted } from "../../utils/cancellation";
 import { Level, DownloadStage } from "../../types";
 import { logger } from "../../utils/logger";
 import {
+  audioFor,
   parseMasterPlaylist,
   parseMediaPlaylist,
   parseLevelsPlaylist,
@@ -63,8 +64,8 @@ export class HlsDownloadHandler extends BasePlaylistHandler {
       videoUri = videoLevels[0]?.uri || null;
     }
 
-    const audioUri =
-      audioLevels.length > 0 ? audioLevels[0]?.uri || null : null;
+    // The audio of the chosen variant's own group (see audioFor), not just the first one.
+    const audioUri = audioLevels.length > 0 ? audioFor(levels, videoLevels[0])?.uri || null : null;
 
     return { video: videoUri, audio: audioUri };
   }
