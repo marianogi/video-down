@@ -8,7 +8,8 @@ con diferido.
 
 Si el vídeo está protegido con **DRM**, la extensión lo advierte y **no lo descarga**.
 
-> Proyecto de uso privado. No se publica en la Chrome Web Store.
+> Proyecto personal. No se publica en la Chrome Web Store: se instala con los paquetes de
+> [Releases](https://github.com/marianogi/video-down/releases).
 
 ---
 
@@ -61,8 +62,7 @@ Si una red corporativa o un cortafuegos bloquea esos sitios, la instalación se 
 
 ### Paso 1. Descargar el paquete
 
-1. El repositorio es privado: entra en GitHub con una cuenta que tenga acceso y abre
-   <https://github.com/marianogi/video-down/releases>.
+1. Abre <https://github.com/marianogi/video-down/releases>. No hace falta cuenta de GitHub.
 2. En la versión más reciente, en «Assets», descarga:
    - en Windows, `video-down-setup-<versión>.exe`;
    - en macOS, `video-down-<versión>-macos.zip`.
