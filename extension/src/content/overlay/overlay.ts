@@ -632,7 +632,9 @@ export class Overlay {
     this.layoutQueued = true;
     requestAnimationFrame(() => {
       this.layoutQueued = false;
-      this.layout();
+      // Asked for before destroy(): it would put the layer back (in a background tab, as soon as it
+      // shows again).
+      if (!this.lifetime.signal.aborted) this.layout();
     });
   }
 

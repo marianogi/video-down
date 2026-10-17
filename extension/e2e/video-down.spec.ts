@@ -822,7 +822,7 @@ test("an update with the page open: the old copy retires in silence and the new 
   });
   try {
     const browserCdp = await context.browser()!.newBrowserCDPSession();
-    await browserCdp.send("Extensions.loadUnpacked", { path: ext });
+    const { id } = await browserCdp.send("Extensions.loadUnpacked", { path: ext });
     // The welcome tab of the install, out of the way (see the extContext fixture).
     for (const deadline = Date.now() + 15_000; Date.now() < deadline; await new Promise((r) => setTimeout(r, 100))) {
       const welcome = context.pages().find((p) => p.url().includes("options.html"));
@@ -845,7 +845,14 @@ test("an update with the page open: the old copy retires in silence and the new 
     // The old copy took its icon away; the new one, injected into the open page, drew its own.
     await expect
       .poll(() => page.evaluate(() => [...document.querySelectorAll("video-down-overlay")].map((h) => h.hasAttribute("data-old"))), { timeout: 20_000 })
-      .toEqual([false]);
+      .toEqual([false])
+      .catch(async (err: unknown) => {
+        // What the service worker's injections did, for the record of the run.
+        const log = await context.newPage();
+        await log.goto(`chrome-extension://${id}/options/options.html`);
+        console.log("injections:", JSON.stringify(await log.evaluate(() => chrome.storage.session.get("injections"))));
+        throw err;
+      });
     // The player keeps reading playlists and the page-world script keeps reporting them.
     await page.evaluate(() =>
       document.dispatchEvent(new CustomEvent("video-down:manifest", { detail: JSON.stringify({ url: `${location.origin}/media/x.m3u8`, kind: "hls" }) })),

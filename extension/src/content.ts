@@ -34,7 +34,9 @@ const NAV_SLACK_MS = 1500;
 /** A video that starts loading this long after an address change is not attributed to it. */
 const NAV_WINDOW_MS = 30_000;
 
-if (!g[FLAG]) {
+// A copy that retired leaves the flag down, so that a newer one may start here. One injected where
+// the extension is already gone (a page Chrome had not yet told) does nothing.
+if (!g[FLAG] && connected()) {
   g[FLAG] = true;
   void main();
 }
@@ -81,6 +83,7 @@ async function main(): Promise<void> {
     coverLifter = null;
     detection?.destroy();
     detection = null;
+    g[FLAG] = false;
     return true;
   }
   document.addEventListener(RETIRE_EVENT, () => void retired(), { signal });

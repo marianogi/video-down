@@ -150,7 +150,7 @@ desarrollador. Las pruebas automáticas solo se hacen con Chrome y Chromium.
 3. No hace falta volver a cargarla: es la misma carpeta y la misma extensión, así que los ajustes y el
    historial se conservan.
 4. Tampoco hace falta recargar las pestañas abiertas: la versión nueva se pone sola en ellas y retira el icono
-   de la anterior. Esto vale desde la 0.2.15. Si actualizas desde la 0.2.13 o una anterior, el icono viejo
+   de la anterior. Esto vale desde la 0.2.16. Si actualizas desde la 0.2.13 o una anterior, el icono viejo
    queda oculto pero su script sigue en la pestaña hasta que la recargas, así que recárgalas una vez.
 
 Hazlo cuando no haya grabaciones ni descargas en curso: al recargar la extensión, una grabación en marcha

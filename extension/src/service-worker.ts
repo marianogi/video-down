@@ -1215,6 +1215,8 @@ chrome.runtime.onStartup.addListener(() => void cleanupStaleState().catch((e) =>
  */
 async function injectIntoOpenTabs(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+  // What each pass did, kept for the session (read by the tests when this fails somewhere).
+  const notes: Array<{ at: number; tabId: number; frames: number; injected: number; error?: string }> = [];
   for (const tab of tabs) {
     if (tab.id === undefined || tab.discarded) continue;
     try {
@@ -1224,15 +1226,19 @@ async function injectIntoOpenTabs(): Promise<void> {
         injectImmediately: true,
       });
       const frameIds = running.filter((r) => r.result !== true).map((r) => r.frameId);
+      notes.push({ at: Date.now(), tabId: tab.id, frames: running.length, injected: frameIds.length });
       if (frameIds.length === 0) continue;
       const target = { tabId: tab.id, frameIds };
       // The page-world script first (it does nothing if an earlier version's is still there).
       await chrome.scripting.executeScript({ target, files: ["main-world.js"], world: "MAIN", injectImmediately: true });
       await chrome.scripting.executeScript({ target, files: ["content.js"], injectImmediately: true });
-    } catch {
+    } catch (err) {
       // A page extensions may not enter (the Web Store, an error page…), or a tab closed meanwhile.
+      notes.push({ at: Date.now(), tabId: tab.id, frames: 0, injected: 0, error: err instanceof Error ? err.message : String(err) });
     }
   }
+  const { injections = [] } = (await chrome.storage.session.get("injections")) as { injections?: typeof notes };
+  await chrome.storage.session.set({ injections: [...injections, ...notes].slice(-50) });
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
