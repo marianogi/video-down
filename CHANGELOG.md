@@ -30,6 +30,8 @@ En `chrome://extensions`, las compilaciones que no son de publicación aparecen 
   del instalador. Ahora esos caracteres se quitan.
 - **Un `%` en un título ya no se interpreta.** Un texto como `%(title)s` en una publicación se sustituía
   al escribir el fichero. Ahora yt-dlp lo recibe como texto literal.
+- Herramientas de desarrollo al día por avisos de seguridad nuevos: vite 7.3.7 y vitest 4.1.12. No van
+  en el paquete de la extensión.
 - Pruebas: unitarias del nombre y de la propuesta a Chrome (76 de la extensión y 20 del componente nativo).
   El diálogo real se ha leído en Windows con capturas de cada vía.
 
