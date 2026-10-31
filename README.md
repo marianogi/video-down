@@ -880,20 +880,19 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 > En Windows con Git Bash, `pnpm` puede quedarse esperando la entrada estándar. Si pasa, añade `< /dev/null`
 > al comando o ejecútalo desde PowerShell.
 
-### Estado de verificación (versión 0.2.16, 17/10/2026)
+### Estado de verificación (versión 0.2.17, 31/10/2026)
 
 | Dónde | Qué se comprobó | Resultado |
 |---|---|---|
-| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.15 (sin publicar); extensión y componente nativo en 0.2.16 | Correcto |
-| Windows 11 | Las 52 pruebas de extremo a extremo, incluida YouTube real, y las 67 unitarias. Una de extremo a extremo es nueva: recarga la extensión con una página abierta. Aparte, la actualización desde el paquete real de la 0.2.13 con una página abierta, y un post público de X en una pestaña limpia (el menú ofrece 1170p, 720p, 360p y 270p) | 52 de 52 y 67 de 67 |
-| macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 51 de 51 (YouTube no se ejecuta en GitHub) |
-| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 51 de 51 (YouTube no se ejecuta en GitHub) |
+| Windows 11 (equipo de desarrollo) | Instalador `.exe` en modo silencioso sobre la 0.2.16; extensión y componente nativo en 0.2.17 | Correcto |
+| Windows 11 | Las 52 pruebas de extremo a extremo, incluida YouTube real, 76 unitarias de la extensión y 20 del componente nativo. Aparte, una descarga real de un post público de Instagram con el componente instalado: el fichero se llama `naomipq - If Abel was a booger, Luke would definitely pick him. See it in action by 640p.mp4` | 52 de 52, 76 de 76 y 20 de 20 |
+| macOS 15 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo (YouTube no se ejecuta en GitHub) | Correcto |
+| Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo (YouTube no se ejecuta en GitHub) | Correcto |
 
 El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas, que comprueban la
 ruta que Chrome decide sin diálogo. En la 0.2.17 se ha leído el diálogo real en Windows, a mano y con
 capturas: yt-dlp con la extensión de IDM cargada, y fichero directo y HLS con otra extensión que escucha
-el mismo evento. En macOS no se ha mirado el diálogo. La descarga completa de un vídeo de Instagram con
-este nombre no se ha llegado a hacer: el diálogo se cancelaba.
+el mismo evento. En macOS no se ha mirado el diálogo.
 
 La verificación en macOS encontró que el icono podía parpadear con el ratón quieto: corregido antes de
 publicar.
