@@ -14,7 +14,7 @@ import { t, formatBytes, formatEta } from "../../shared/i18n";
 import { route, type Route, type RouteInput, type DirectSource } from "../../core/router";
 import { permalinkNear } from "../permalinks";
 import { bindMedia } from "../../core/binding";
-import { readFacts, pageTitle, DRM_ATTR, isLiveElement, isOutOfSight, previewTarget } from "../video-facts";
+import { readFacts, pageAuthor, pageTitle, DRM_ATTR, isLiveElement, isOutOfSight, previewTarget } from "../video-facts";
 import type { FrameUi, UiRect } from "../frame-relay";
 import {
   MessageType,
@@ -1202,6 +1202,7 @@ export class Overlay {
 
     const playing = tr.video.currentSrc;
     const title = pageTitle();
+    const channel = pageAuthor();
     const choices: Choice[] = sources.map((s, i) => {
       const height = s.height ?? (s.url === playing && tr.video.videoHeight ? tr.video.videoHeight : undefined);
       const label = height ? `${height}p` : s.label || (sources.length > 1 ? t("fileN", String(i + 1)) : t("originalFile"));
@@ -1215,6 +1216,7 @@ export class Overlay {
           metadata: { url: s.url, format: VideoFormat.DIRECT, pageUrl: location.href, title },
           tabTitle: title,
           website: location.hostname,
+          ...(channel ? { channel } : {}),
           variantLabel: label,
           ...(height ? { variantHeight: height } : {}),
         },
@@ -1253,6 +1255,7 @@ export class Overlay {
       return;
     }
     const title = pageTitle();
+    const channel = pageAuthor();
     const kind = media.format === VideoFormat.DASH ? "DASH" : "HLS";
     const choices: Choice[] = reply.variants.map((v: BrowserVariant) => {
       const label = v.label === "original" ? t("originalFile") : v.label;
@@ -1265,6 +1268,7 @@ export class Overlay {
           metadata: { ...media, title },
           tabTitle: title,
           website: location.hostname,
+          ...(channel ? { channel } : {}),
           variantLabel: label,
           ...(v.manifestQuality ? { manifestQuality: v.manifestQuality } : {}),
           ...(v.height ? { variantHeight: v.height } : {}),
@@ -1333,6 +1337,9 @@ export class Overlay {
           title: result.title,
           label,
           pageUrl: location.href,
+          ...(result.channel ? { channel: result.channel } : {}),
+          ...(result.description ? { description: result.description } : {}),
+          ...(v.ext ? { ext: v.ext } : {}),
         },
       };
     });

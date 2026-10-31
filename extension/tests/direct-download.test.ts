@@ -29,6 +29,7 @@ const item = { id: 7, state: "complete", filename: "/tmp/clip.mp4", bytesReceive
   runtime: { lastError: undefined },
   downloads: {
     onChanged: { addListener: (f: (d: Delta) => void) => listeners.push(f) },
+    onDeterminingFilename: { addListener: () => undefined, removeListener: () => undefined },
     download: (_opts: unknown, cb: (id: number) => void) => setTimeout(() => cb(7), 0),
     search: (_q: unknown, cb: (r: unknown[]) => void) => {
       const call = ++searches;

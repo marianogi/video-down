@@ -158,3 +158,13 @@ export function pageTitle(): string {
   const og = document.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim();
   return (og || document.title || location.hostname).slice(0, 150);
 }
+
+/** Who published the video, when the page says so. A profile link (article:author) is not a name. */
+export function pageAuthor(): string | undefined {
+  const selectors = ['meta[name="author"]', 'meta[property="article:author"]', 'meta[name="twitter:creator"]', 'meta[property="og:site_name"]'];
+  for (const selector of selectors) {
+    const value = document.querySelector(selector)?.getAttribute("content")?.trim().replace(/^@/, "");
+    if (value && !/^https?:/i.test(value)) return value.slice(0, 100);
+  }
+  return undefined;
+}

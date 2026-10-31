@@ -677,8 +677,9 @@ el ffmpeg nativo solo existe si se ha instalado el componente nativo.
    llegaban estropeados.
 5. **Dónde guarda yt-dlp.** Como yt-dlp no pasa por Chrome, antes de empezar la extensión inicia una
    descarga mínima de marcador para que Chrome decida la ruta: su carpeta de descargas o su diálogo
-   «Guardar como». En cuanto Chrome la decide, borra el marcador y yt-dlp escribe el vídeo en esa
-   carpeta y con ese nombre (`download` con `saveTo`). El componente nativo solo acepta una carpeta
+   «Guardar como», que propone `canal - palabras del título o del texto calidad.ext`. En cuanto Chrome la
+   decide, borra el marcador y yt-dlp escribe el vídeo en esa carpeta y con ese nombre, añadiendo la
+   extensión real (`download` con `saveTo`). El componente nativo solo acepta una carpeta
    absoluta, sin `..`, y un nombre sin separadores ni caracteres de control. Si se cancela el diálogo,
    no se descarga nada. `probe` y `download` pueden llevar las cookies de la web cuando hace falta
    (caso 5); se rechazan si alguna es de otra web o tiene caracteres de control.
@@ -868,8 +869,8 @@ desde cualquier sistema: el script escribe el `.zip` conservando los permisos de
 
 | Conjunto | Qué cubre | Cómo se ejecuta |
 |---|---|---|
-| Unitarias de la extensión (Vitest, 67) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, masters con la pista de audio declarada sin dirección (Unified Streaming), búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido, perfiles de captura, previsualizaciones la carpeta y el nombre que Chrome eligió para yt-dlp, y los textos de reserva de las páginas de la extensión cuando Chrome no da los suyos, y el audio de cada calidad según su grupo (lista real de X) | `pnpm test` |
-| Unitarias del componente nativo (Deno, 17) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) formato del fichero de cookies y destino de guardado (carpetas absolutas, nombres sin separadores) | `deno task test` |
+| Unitarias de la extensión (Vitest, 76) | Enrutador, YouTube, asociación vídeo-manifiesto, resoluciones de HLS y DASH, DRM, ajustes, clasificación de fallos de lectura, vectores AES-128, rangos de bytes, masters con la pista de audio declarada sin dirección (Unified Streaming), búsqueda de la master, copias del reproductor, informe de diagnóstico, fin de una descarga directa cuando los avisos de Chrome se cruzan, cuándo y qué sesión se presta a yt-dlp, y la grabación: fragmentos MP4 de MediaRecorder con su duración, nivel de VP9, seguimiento de un directo HLS por número de secuencia, listas del diferido, perfiles de captura, previsualizaciones la carpeta y el nombre que Chrome eligió para yt-dlp, y los textos de reserva de las páginas de la extensión cuando Chrome no da los suyos, y el audio de cada calidad según su grupo (lista real de X) | `pnpm test` |
+| Unitarias del componente nativo (Deno, 20) | Validación de mensajes, resoluciones a partir de yt-dlp, progreso, marcos de *native messaging*, cookies de sesión (solo de esa web, sin caracteres que falseen el fichero) formato del fichero de cookies y destino de guardado (carpetas absolutas, nombres sin separadores) | `deno task test` |
 | Extremo a extremo (Playwright, 47 + 5 opcionales) | La extensión real en Chromium sobre páginas locales: fichero directo, HLS, HLS con la pista de audio declarada sin dirección (Unified Streaming), HLS sin extensión, HLS servido como `text/plain`, HLS con AES-128, reproductor en un `iframe` de otro origen cuyo CDN exige su `Referer`, lo mismo con variantes y segmentos en otro servidor, enlace de un solo uso (calidades sacadas de la copia del reproductor y descarga), lista cifrada en formato propio (diagnóstico sin descarga), AES-128 sin vector declarado, AES-128 con vector que empieza por ceros, vídeo en un único fichero con rangos de bytes, página que solo pide una variante con nombres de Unified Streaming y token (master encontrada, descarga e informe de diagnóstico sin tokens), página que reescribe su dirección, web de una sola página que cambia de vídeo, listas pedidas por el service worker de la página, grabación de un directo HLS simulado (copia exacta, diferido y MP4), captura del reproductor con los cuatro perfiles (diferido y MP4) sobre un directo sin lista (MediaStream), captura de un directo cuyo audio no arranca (solo imagen), previsualización dentro de un enlace (vídeo completo de la página enlazada), un reproductor de previsualización compartido que la web mueve y retira con el menú abierto (el menú no se mueve, no se cierra y sigue con su vídeo), el progreso encima de las opciones, un vídeo tapado por otra capa (sin icono), una web de una sola página que abre el vídeo encima de la previsualización (un único icono, en el vídeo abierto), una previsualización colocada sobre su miniatura enlazada, una previsualización que la página retira cuando el ratón pasa a su icono (el icono no se mueve ni desaparece), un menú cerrado sin descargar mientras el reproductor compartido pasa a otra miniatura (el icono va con él), opciones que se buscan al dejar el ratón sobre el icono (un servidor lento en dar el tamaño: se pregunta una vez, antes del clic), una descarga HLS y una copia de un directo cuyos fragmentos redirigen a otro servidor que exige el `Referer`, un directo incrustado en un iframe (la grabación lleva el título de la página), un reproductor en un iframe tapado por una capa transparente (el icono se despliega y el menú se abre sin que la capa reciba el clic), un directo cuya lista se sirve como `text/html` sin extensión, un directo cuya lista solo atiende al reproductor y un directo reconocido solo porque su duración crece (los dos con botón de grabar), los fallos propios de una página (una petición bloqueada por un bloqueador de anuncios, un `send()` repetido, un `pushState` a otro origen, un `setMediaKeys` erróneo) atribuidos a la página y no a la extensión, las lecturas de la propia extensión sin ninguna línea roja en la consola de la página (ni el 403 de un servidor que solo atiende al reproductor ni el 404 de una lista maestra probada que no existe), una actualización de la extensión con la página abierta (el script anterior se retira, el nuevo entra solo y el menú ofrece las calidades sin recargar), el icono que se desdobla con el ratón y con el teclado, DASH, DRM por manifiesto, DRM por EME, `blob:` sin manifiesto, vídeos diminutos y teclado. Cada descarga se comprueba con `ffprobe` (resolución, H.264 y AAC). | `pnpm run test:e2e` |
 | Opcionales | YouTube a través del componente nativo (`VD_E2E_ONLINE=1`); paso de un HLS grande al componente nativo, respaldo automático cuando falla el navegador, **comparación de calidades con yt-dlp** como segunda opinión y **muro de una web con sesión**: enlace propio de la publicación, sesión prestada para consultar y para descargar (`VD_E2E_NATIVE=1`). Necesitan el componente nativo instalado. | `VD_E2E_ONLINE=1 VD_E2E_NATIVE=1 pnpm run test:e2e` |
 
@@ -888,8 +889,11 @@ la raíz del Shadow DOM del icono es abierta para que Playwright pueda pulsarlo.
 | macOS 14 en Apple Silicon, máquina limpia de GitHub Actions | Zip, `install.sh`, autocomprobación y pruebas de extremo a extremo | 51 de 51 (YouTube no se ejecuta en GitHub) |
 | Windows Server 2025, máquina limpia de GitHub Actions | `.exe` silencioso, verificación SHA-256, autocomprobación y pruebas de extremo a extremo | 51 de 51 (YouTube no se ejecuta en GitHub) |
 
-El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas: se ha comprobado
-la ruta que Chrome decide sin diálogo, no el diálogo en sí.
+El diálogo «Guardar como» de Chrome no se puede pulsar desde las pruebas automáticas, que comprueban la
+ruta que Chrome decide sin diálogo. En la 0.2.17 se ha leído el diálogo real en Windows, a mano y con
+capturas: yt-dlp con la extensión de IDM cargada, y fichero directo y HLS con otra extensión que escucha
+el mismo evento. En macOS no se ha mirado el diálogo. La descarga completa de un vídeo de Instagram con
+este nombre no se ha llegado a hacer: el diálogo se cancelaba.
 
 La verificación en macOS encontró que el icono podía parpadear con el ratón quieto: corregido antes de
 publicar.
@@ -916,6 +920,10 @@ Gatekeeper, y cargar la extensión en Google Chrome para Mac.
 
 ## Limitaciones conocidas
 
+- **El nombre propuesto y otras extensiones de descargas.** Si otra extensión escucha
+  `chrome.downloads.onDeterminingFilename` (la de Internet Download Manager lo hace) y se ha instalado o
+  actualizado después que video-down, Chrome vuelve a proponer «descarga» o un código. Se arregla pulsando
+  el botón de recargar de video-down en `chrome://extensions`. El nombre se puede cambiar en el diálogo.
 - **YouTube y redes sociales necesitan el componente nativo.** Si cambian su protocolo, puede hacer falta
   actualizar yt-dlp desde las opciones.
 - **ffmpeg.wasm tiene un límite de unos 2 GB** por fichero. Por encima se usa el componente nativo si está.

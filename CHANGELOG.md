@@ -7,6 +7,32 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.17 (2026-10-31)
+
+- **El diálogo «Guardar como» propone un nombre útil y con su extensión.** En las descargas por yt-dlp
+  (Instagram, X, TikTok, YouTube…) proponía «descarga», sin extensión y con el filtro `*.*`. En las de HLS y
+  DASH por el navegador proponía un código. La causa: en cuanto otra extensión escucha
+  `chrome.downloads.onDeterminingFilename`, Chrome ignora el `filename` de la descarga, aunque esa extensión
+  no proponga nada. Lo hace la de Internet Download Manager, y se ha reproducido igual con una extensión
+  cuyo listener está vacío. Ahora video-down propone el nombre en ese mismo paso en todas sus descargas.
+  - **Límite medido:** esa propuesta solo gana si video-down es, de las extensiones que escuchan ese evento,
+    la instalada o actualizada más recientemente. Tras recargar video-down, lo es. Si después se actualiza
+    la otra extensión, vuelve a salir «descarga» hasta la siguiente recarga de video-down.
+- **El nombre lleva canal y palabras del título:** `canal - título o texto de la publicación calidad.ext`.
+  - En Instagram, cuyo título es siempre «Video by usuario», se usa la primera línea del texto de la
+    publicación, sin enlaces, hashtags ni menciones. Si no dice nada, queda `usuario calidad.ext`.
+  - En las descargas por el navegador, el autor sale de los metadatos de la página y, si no lo indica, del
+    nombre de la web.
+- **La extensión es la del formato real.** Por yt-dlp se calcula antes de empezar: MP4 si une vídeo y audio,
+  y la del propio formato si no. Un `.webm` directo ya no se propone como `.mp4`.
+- **Nombres que Chrome rechazaba.** Un `~`, un carácter invisible, medio emoji o un punto al final hacían
+  que Chrome rechazara el nombre; video-down perdía entonces la carpeta elegida y guardaba en la de descargas
+  del instalador. Ahora esos caracteres se quitan.
+- **Un `%` en un título ya no se interpreta.** Un texto como `%(title)s` en una publicación se sustituía
+  al escribir el fichero. Ahora yt-dlp lo recibe como texto literal.
+- Pruebas: unitarias del nombre y de la propuesta a Chrome (76 de la extensión y 20 del componente nativo).
+  El diálogo real se ha leído en Windows con capturas de cada vía.
+
 ## 0.2.16 (2026-10-17)
 
 La 0.2.14 y la 0.2.15 no llegaron a publicarse: su verificación en macOS encontró el fallo que corrige el

@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertThrows } from "./assert.ts";
 import { cookieFileText, cookieMatchesUrl, parseCookies, parseRequest, parseSaveTarget, isSafeHttpUrl } from "../src/protocol.ts";
-import { buildVariants, publicVariants, selectorForHeight } from "../src/variants.ts";
+import { buildVariants, outputTemplateText, publicVariants, selectorForHeight } from "../src/variants.ts";
 import { parseProgressLine, ProgressTracker, summariseError } from "../src/progress.ts";
 import { encodeMessage, FrameDecoder, MAX_INCOMING_BYTES } from "../src/messaging.ts";
 
@@ -99,6 +99,42 @@ Deno.test("buildVariants flags DRM-only and live media without variants", () => 
 Deno.test("buildVariants falls back to a single 'best' variant", () => {
   const built = buildVariants({ title: "clip", formats: [{ format_id: "0", vcodec: "unknown", acodec: "mp3" }] });
   assertEquals(built.variants.map((v) => v.id), ["best"]);
+});
+
+Deno.test("buildVariants gives the data for the file name (Instagram, real yt-dlp fields)", () => {
+  const built = buildVariants({
+    title: "Video by naomipq",
+    channel: "naomipq",
+    uploader: "B E A U T Y",
+    uploader_id: "2815873",
+    description: "x".repeat(500),
+    formats: [
+      { ext: "mp4", vcodec: "avc1", acodec: "none", height: 720 },
+      { ext: "m4a", vcodec: "none", acodec: "mp4a", tbr: 128 },
+    ],
+  });
+  assertEquals(built.channel, "naomipq");
+  assertEquals(built.description?.length, 400);
+  assertEquals(built.variants[0]!.ext, "mp4");
+  // A bare number is not a channel; a handle is.
+  assertEquals(buildVariants({ uploader_id: "2815873" }).channel, undefined);
+  assertEquals(buildVariants({ uploader_id: "@me" }).channel, "@me");
+});
+
+Deno.test("buildVariants expects MP4 when merging and the format's own extension otherwise", () => {
+  const audio = { ext: "m4a", vcodec: "none", acodec: "mp4a" };
+  const merged = buildVariants({ formats: [{ ext: "webm", vcodec: "vp9", acodec: "none", height: 720 }, audio] });
+  assertEquals(merged.variants[0]!.ext, "mp4");
+  const single = buildVariants({ formats: [{ ext: "webm", vcodec: "vp9", acodec: "opus", height: 720 }, audio] });
+  assertEquals(single.variants[0]!.ext, "webm");
+  const best = buildVariants({ formats: [{ ext: "mov", vcodec: "unknown", acodec: "aac" }] });
+  assertEquals(best.variants[0]!.ext, "mov");
+  const odd = buildVariants({ formats: [{ ext: "unknown_video", vcodec: "unknown", acodec: "aac" }] });
+  assertEquals(odd.variants[0]!.ext, "mp4");
+});
+
+Deno.test("a percent sign in a name is literal text for yt-dlp", () => {
+  assertEquals(outputTemplateText("100% %(title)s"), "100%% %%(title)s");
 });
 
 Deno.test("selectorForHeight only interpolates an integer", () => {

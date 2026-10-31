@@ -32,7 +32,9 @@ import { generateDownloadId } from "./core/utils/id-utils";
 import { logger } from "./core/utils/logger";
 import { canCancelDownload, CANNOT_CANCEL_MESSAGE } from "./core/utils/download-utils";
 import { normalizeUrl, detectFormatFromUrl } from "./core/utils/url-utils";
-import { generateFilenameFromTabInfo, generateFilenameWithExtension } from "./core/utils/file-utils";
+import { mediaExtension, mediaFileBase } from "./core/utils/file-utils";
+import { suggestDownloadName } from "./core/utils/suggest-name";
+import { detectExtensionFromUrl } from "./core/metadata/metadata-extractor";
 import { createOffscreenDocument, closeOffscreenDocument } from "./core/ffmpeg/offscreen-manager";
 import { KEEPALIVE_INTERVAL_MS, STORAGE_CONFIG_KEY } from "./shared/constants";
 import { variantsFor, type BrowserVariant } from "./core/variants";
@@ -44,7 +46,6 @@ import { isYoutubeHost } from "./core/router";
 import type { ProbeResultResponse, SaveTarget, SessionCookie } from "@host/protocol";
 import { saveTargetFromPath } from "./core/native/save-target";
 import { shouldAskWhereToSave } from "./core/storage/settings";
-import { sanitizeFilename } from "./core/utils/file-utils";
 import {
   activeRecordingCount,
   discardRecording,
@@ -555,16 +556,17 @@ async function handleGetVariants(
 
 function resolveFilename(payload: DownloadRequestPayload): string {
   const { metadata, url } = payload;
+  if (payload.filename) return payload.filename;
   const isStream =
     metadata.format === VideoFormat.HLS || metadata.format === VideoFormat.M3U8 || metadata.format === VideoFormat.DASH;
-  const extension = isStream ? "mp4" : metadata.fileExtension || "mp4";
-  const title = payload.tabTitle
-    ? `${payload.tabTitle}${payload.variantLabel ? ` ${payload.variantLabel}` : ""}`
-    : undefined;
-  if (payload.filename) return payload.filename;
-  return title || payload.website
-    ? generateFilenameFromTabInfo(title, payload.website, extension)
-    : generateFilenameWithExtension(url, extension);
+  // A direct file's real type is checked again when it starts (HEAD), for URLs that do not show it.
+  const extension = isStream ? "mp4" : metadata.fileExtension || detectExtensionFromUrl(url) || "mp4";
+  const base = mediaFileBase({
+    channel: payload.channel || payload.website?.replace(/^www\./, ""),
+    title: payload.tabTitle,
+    quality: payload.variantLabel,
+  });
+  return `${base}.${extension}`;
 }
 
 /**
@@ -760,16 +762,20 @@ async function handleNativeProbe(payload: NativeProbePayload): Promise<NativePro
  */
 async function chooseNativeTarget(suggested: string): Promise<SaveTarget | "cancelled" | null> {
   const saveAs = await shouldAskWhereToSave().catch(() => false);
+  // Its own address, to tell it apart from other placeholders when Chrome asks for its name.
+  const url = `data:application/octet-stream;video-down=${crypto.randomUUID()};base64,`;
+  const release = suggestDownloadName(url, suggested);
   let id: number;
   try {
     id = await chrome.downloads.download({
-      url: "data:application/octet-stream;base64,",
+      url,
       filename: suggested,
       saveAs,
       conflictAction: "uniquify",
     });
   } catch (err) {
     logger.warn("could not ask Chrome where to save", err);
+    release();
     return null;
   }
   const item = await new Promise<chrome.downloads.DownloadItem | null>((resolve) => {
@@ -790,6 +796,7 @@ async function chooseNativeTarget(suggested: string): Promise<SaveTarget | "canc
     chrome.downloads.onChanged.addListener(onChanged);
     check();
   });
+  release();
   if (!item) return null;
   if (item.state === "interrupted") {
     await chrome.downloads.erase({ id }).catch(() => undefined);
@@ -827,8 +834,13 @@ async function startNativeDownload(
   };
   save(() => undefined);
 
-  const suggested = `${sanitizeFilename(payload.title || "video").slice(0, 140)} ${sanitizeFilename(payload.label)}`.trim();
-  const target = await chooseNativeTarget(`${suggested}.mp4`);
+  const suggested = mediaFileBase({
+    channel: payload.channel,
+    title: payload.title,
+    description: payload.description,
+    quality: payload.label,
+  });
+  const target = await chooseNativeTarget(`${suggested}.${mediaExtension(payload.ext)}`);
   if (target === "cancelled") {
     save((s) => (s.progress.stage = DownloadStage.CANCELLED));
     void afterFinish(state);
@@ -899,6 +911,9 @@ async function startNativeForStream(
         title: payload.metadata.title || probe.title,
         label: payload.variantLabel || pick.label,
         pageUrl: payload.metadata.pageUrl,
+        ...(payload.channel || probe.channel ? { channel: (payload.channel || probe.channel)! } : {}),
+        ...(probe.description ? { description: probe.description } : {}),
+        ...(pick.ext ? { ext: pick.ext } : {}),
       },
       origin,
       presetId,

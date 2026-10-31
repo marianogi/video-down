@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { route, youtubeWatchUrl, isManifestUrl, BLOB_GRACE_MS, type RouteInput } from "../src/core/router";
@@ -437,6 +437,100 @@ describe("where yt-dlp saves", () => {
     expect(saveTargetFromPath("D:\\video.mp4")).toEqual({ dir: "D:\\", name: "video" });
     expect(saveTargetFromPath("f3b2c1d0-guid")).toBeNull();
     expect(saveTargetFromPath("relative/dir/x.mp4")).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ the proposed file name
+
+import { mediaExtension, mediaFileBase, replaceExtension, sanitizeFilename } from "../src/core/utils/file-utils";
+
+describe("the proposed file name", () => {
+  it("Instagram: the title says nothing, so the account and the post's text (real yt-dlp data)", () => {
+    expect(
+      mediaFileBase({
+        channel: "naomipq",
+        title: "Video by naomipq",
+        description: "If Abel was a booger, Luke would definitely pick him. See it in action by playing this video. Yes! That's right, folks. This is a video",
+        quality: "720p",
+      }),
+    ).toBe("naomipq - If Abel was a booger, Luke would definitely pick him. See it in action by 720p");
+  });
+
+  it("a title that says something wins over the description", () => {
+    expect(mediaFileBase({ channel: "jawed", title: "Me at the zoo", description: "Other text", quality: "144p" })).toBe("jawed - Me at the zoo 144p");
+  });
+
+  it("does not repeat the account of a title like X's", () => {
+    expect(mediaFileBase({ channel: "NASA", title: "NASA - Launch day", quality: "720p" })).toBe("NASA - Launch day 720p");
+  });
+
+  it("leaves out links, hashtags, mentions and further lines of a post", () => {
+    expect(mediaFileBase({ channel: "a", title: "Video by a", description: "\n@friend Great day #sun https://t.co/x #beach\nSecond line" })).toBe("a - Great day");
+    expect(mediaFileBase({ channel: "a", title: "Video by a", description: "#only #tags" })).toBe("a");
+  });
+
+  it("works with what there is", () => {
+    expect(mediaFileBase({})).toBe("video");
+    expect(mediaFileBase({ title: "Clip", quality: "1080p" })).toBe("Clip 1080p");
+    expect(mediaFileBase({ title: "Video by a" })).toBe("Video by a");
+    expect(mediaFileBase({ channel: "www.example.com", title: "example.com", quality: "720p" })).toBe("www.example.com 720p");
+  });
+
+  it("gives names Chrome and the native component accept", () => {
+    const name = mediaFileBase({ channel: "-.dash~", title: "...Hi: 100% \u200Dtrue <ok>?...", quality: "720p" });
+    expect(name).toBe("dash - Hi 100% true ok 720p");
+    expect(sanitizeFilename(" .a\nb\u202E\uFE0F. ")).toBe("a b\uFE0F");
+    // A cut in the middle of an emoji leaves no half a character.
+    const cut = mediaFileBase({ title: "x".repeat(79) + "😀" });
+    expect(cut).toBe("x".repeat(79));
+    expect(mediaFileBase({ channel: "c".repeat(60), title: "t" }).startsWith("c".repeat(40) + " - t")).toBe(true);
+  });
+
+  it("uses only a plain extension", () => {
+    expect(mediaExtension("WEBM")).toBe("webm");
+    expect(mediaExtension("unknown_video")).toBe("mp4");
+    expect(mediaExtension("a/b")).toBe("mp4");
+    expect(mediaExtension(undefined)).toBe("mp4");
+    expect(replaceExtension("clip 720p.mp4", "webm")).toBe("clip 720p.webm");
+  });
+});
+
+// ------------------------------------------------------------------ naming a download in Chrome's own step
+
+import { suggestDownloadName } from "../src/core/utils/suggest-name";
+
+describe("suggestDownloadName", () => {
+  type Listener = (item: { url: string; finalUrl: string }, suggest: (s?: unknown) => void) => void;
+  const listeners = new Set<Listener>();
+  beforeEach(() => {
+    listeners.clear();
+    vi.stubGlobal("chrome", {
+      downloads: { onDeterminingFilename: { addListener: (f: Listener) => listeners.add(f), removeListener: (f: Listener) => listeners.delete(f) } },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("names only its own download and keeps listening until released", () => {
+    const release = suggestDownloadName("data:x", "a.mp4");
+    const answers: unknown[] = [];
+    for (const f of listeners) {
+      f({ url: "https://other/", finalUrl: "https://other/" }, (s) => answers.push(s));
+      f({ url: "data:x", finalUrl: "data:x" }, (s) => answers.push(s));
+    }
+    expect(answers).toEqual([{ filename: "a.mp4", conflictAction: "uniquify" }]);
+    // Removing the listener before Chrome has read the proposal makes Chrome discard it.
+    expect(listeners.size).toBe(1);
+    release();
+    expect(listeners.size).toBe(0);
+  });
+
+  it("keeps listening while another download is pending", () => {
+    const first = suggestDownloadName("data:x", "a.mp4");
+    const second = suggestDownloadName("data:y", "b.mp4");
+    first();
+    expect(listeners.size).toBe(1);
+    second();
+    expect(listeners.size).toBe(0);
   });
 });
 

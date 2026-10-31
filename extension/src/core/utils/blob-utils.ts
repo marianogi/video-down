@@ -6,6 +6,7 @@ import { MessageType } from "../../shared/messages";
 import { getDownload, storeDownload } from "../database/downloads";
 import { logger } from "./logger";
 import { shouldAskWhereToSave } from "../storage/settings";
+import { suggestDownloadName } from "./suggest-name";
 
 /**
  * Revoke a blob URL via the offscreen document.
@@ -35,6 +36,7 @@ export async function saveBlobUrlToFile(
   stateId: string,
 ): Promise<string> {
   const saveAs = await shouldAskWhereToSave();
+  const release = suggestDownloadName(blobUrl, filename);
   try {
     return await new Promise<string>((resolve, reject) => {
       chrome.downloads.download(
@@ -115,5 +117,7 @@ export async function saveBlobUrlToFile(
   } catch (error) {
     revokeBlobUrl(blobUrl);
     throw error;
+  } finally {
+    release();
   }
 }

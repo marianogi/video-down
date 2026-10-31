@@ -98,6 +98,8 @@ export interface Variant {
   vcodec?: string;
   /** Approximate final size in bytes when yt-dlp knows it. */
   approxBytes?: number;
+  /** Extension the file should end up with, for the name proposed before yt-dlp starts. */
+  ext?: string;
 }
 
 export interface PongResponse {
@@ -117,6 +119,10 @@ export interface ProbeResultResponse {
   type: "probe-result";
   probeId: string;
   title: string;
+  /** Channel or account that published it, for the file name. */
+  channel?: string;
+  /** Start of the post's text: on Instagram the title is only "Video by <account>". */
+  description?: string;
   extractor: string;
   isLive: boolean;
   duration?: number;

@@ -30,7 +30,8 @@ import {
   DirectDownloadHandlerResult,
   DirectDownloadResult,
 } from "../types";
-import { sanitizeFilename } from "../../utils/file-utils";
+import { replaceExtension, sanitizeFilename } from "../../utils/file-utils";
+import { suggestDownloadName } from "../../utils/suggest-name";
 import { shouldAskWhereToSave } from "../../storage/settings";
 
 /** Internal listener structure for tracking Chrome download progress */
@@ -345,6 +346,7 @@ export class DirectDownloadHandler {
     stateId: string,
     abortSignal?: AbortSignal,
   ): Promise<DirectDownloadHandlerResult> {
+    let release: (() => void) | undefined;
     try {
       // Sanitize filename to remove invalid characters
       const sanitizedFilename = sanitizeFilename(filename);
@@ -356,8 +358,10 @@ export class DirectDownloadHandler {
       // Extract file extension from URL or headers (cancellable)
       const fileExtension = await this.extractFileExtension(url, abortSignal);
 
-      // Start Chrome download with sanitized filename
-      const chromeDownloadId = await this.startChromeDownload(url, sanitizedFilename);
+      // Start Chrome download with sanitized filename and the extension the file really has
+      const finalFilename = fileExtension ? replaceExtension(sanitizedFilename, fileExtension) : sanitizedFilename;
+      release = suggestDownloadName(url, finalFilename);
+      const chromeDownloadId = await this.startChromeDownload(url, finalFilename);
 
       // Store chromeDownloadId in download state for reliable cancellation
       const currentState = await getDownload(stateId);
@@ -387,6 +391,8 @@ export class DirectDownloadHandler {
       throw error instanceof DownloadError
         ? error
         : new DownloadError(`Direct download failed: ${error}`);
+    } finally {
+      release?.();
     }
   }
 

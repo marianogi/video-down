@@ -26,7 +26,7 @@ import {
   type ProbeRequest,
   type SessionCookie,
 } from "./protocol.ts";
-import { buildVariants, publicVariants, type StoredVariant, type YtdlpInfo } from "./variants.ts";
+import { buildVariants, outputTemplateText, publicVariants, type StoredVariant, type YtdlpInfo } from "./variants.ts";
 import {
   FILE_PREFIX,
   FORMAT_PREFIX,
@@ -386,6 +386,8 @@ async function handleProbe(req: ProbeRequest): Promise<void> {
     type: "probe-result",
     probeId,
     title: built.title,
+    ...(built.channel ? { channel: built.channel } : {}),
+    ...(built.description ? { description: built.description } : {}),
     extractor: built.extractor,
     isLive: built.isLive,
     ...(built.duration ? { duration: built.duration } : {}),
@@ -442,7 +444,9 @@ async function handleDownload(req: DownloadRequest): Promise<void> {
     "-P",
     `temp:${tmp}`,
     "-o",
-    req.saveTo ? `${req.saveTo.name}.%(ext)s` : `${sanitizeTitle(probe.title)} [%(id)s] ${variant.label}.%(ext)s`,
+    req.saveTo
+      ? `${outputTemplateText(req.saveTo.name)}.%(ext)s`
+      : `${outputTemplateText(sanitizeTitle(probe.title))} [%(id)s] ${variant.label}.%(ext)s`,
     "--newline",
     "--progress",
     "--progress-template",

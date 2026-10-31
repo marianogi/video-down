@@ -27,6 +27,11 @@ export interface YtdlpFormat {
 export interface YtdlpInfo {
   id?: string;
   title?: string;
+  channel?: string | null;
+  uploader?: string | null;
+  creator?: string | null;
+  uploader_id?: string | null;
+  description?: string | null;
   extractor_key?: string;
   extractor?: string;
   is_live?: boolean | null;
@@ -47,6 +52,8 @@ export interface StoredVariant extends Variant {
 
 export interface BuiltVariants {
   title: string;
+  channel?: string;
+  description?: string;
   extractor: string;
   isLive: boolean;
   duration?: number;
@@ -130,6 +137,23 @@ export function selectorForHeight(height: number): string {
 
 export const BEST_SELECTOR = "bv[vcodec^=avc1]+ba[acodec^=mp4a]/bv+ba/b";
 
+/**
+ * The extension a selector should end up with: separate video and audio are merged into MP4
+ * (--merge-output-format); a single format keeps its own, and yt-dlp lists the best one last.
+ * Only used to propose a name: the file on disk always gets the extension yt-dlp gives it.
+ */
+function expectedExt(candidates: YtdlpFormat[], audio: YtdlpFormat | undefined): string {
+  if (audio && candidates.some((f) => f.acodec === "none")) return "mp4";
+  const ext = candidates.at(-1)?.ext ?? "";
+  return /^[a-z0-9]{2,5}$/i.test(ext) ? ext.toLowerCase() : "mp4";
+}
+
+/** Who published it. A bare number (Instagram's uploader_id) says nothing in a file name. */
+function channelOf(info: YtdlpInfo): string | undefined {
+  const id = info.uploader_id && !/^\d+$/.test(info.uploader_id) ? info.uploader_id : undefined;
+  return (info.channel || info.uploader || info.creator || id)?.trim().slice(0, 100) || undefined;
+}
+
 export function buildVariants(info: YtdlpInfo): BuiltVariants {
   const formats = info.formats && info.formats.length > 0 ? info.formats : [info as YtdlpFormat];
   const duration = info.duration ?? undefined;
@@ -139,8 +163,12 @@ export function buildVariants(info: YtdlpInfo): BuiltVariants {
   const clearVideo = video.filter((f) => !isDrm(f));
   const drm = video.length > 0 && clearVideo.length === 0;
 
+  const channel = channelOf(info);
+  const description = info.description?.trim().slice(0, 400);
   const base = {
     title: info.title || info.id || "video",
+    ...(channel ? { channel } : {}),
+    ...(description ? { description } : {}),
     extractor: info.extractor_key || info.extractor || "generic",
     isLive,
     ...(duration ? { duration } : {}),
@@ -180,6 +208,7 @@ export function buildVariants(info: YtdlpInfo): BuiltVariants {
         label: fps ? `${h}p${fps}` : `${h}p`,
         height: h,
         selector: selectorForHeight(h),
+        ext: expectedExt(clearVideo.filter((c) => c.height === h), audio),
       };
       if (f.width) v.width = f.width;
       if (fps) v.fps = fps;
@@ -191,10 +220,15 @@ export function buildVariants(info: YtdlpInfo): BuiltVariants {
 
   if (variants.length === 0) {
     // Direct files and sites that expose no resolution metadata.
-    variants.push({ id: "best", label: "best", selector: BEST_SELECTOR });
+    variants.push({ id: "best", label: "best", selector: BEST_SELECTOR, ext: expectedExt(formats, audio) });
   }
 
   return { ...base, variants };
+}
+
+/** A literal text for yt-dlp's -o: a "%" in a title or caption must not be read as a template field. */
+export function outputTemplateText(text: string): string {
+  return text.replaceAll("%", "%%");
 }
 
 /** Strip the server-only selector before sending variants to the extension. */

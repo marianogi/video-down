@@ -81,6 +81,8 @@ export interface DownloadRequestPayload {
   filename?: string;
   tabTitle?: string;
   website?: string;
+  /** Who published it according to the page, for the file name */
+  channel?: string;
   manifestQuality?: ManifestQuality;
   /** Label shown in the UI for the chosen quality */
   variantLabel?: string;
@@ -139,6 +141,10 @@ export interface NativeDownloadPayload {
   title: string;
   label: string;
   pageUrl: string;
+  /** For the proposed file name: who published it, the post's text and the expected extension */
+  channel?: string;
+  description?: string;
+  ext?: string;
 }
 
 export interface ProgressPush {
