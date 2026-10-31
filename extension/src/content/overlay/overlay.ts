@@ -121,9 +121,11 @@ interface RecordingPush {
 
 /** Choice shown in the menu, already resolved to what the click must do. */
 type Choice =
-  | { kind: "browser"; label: string; meta: string; payload: DownloadRequestPayload }
-  | { kind: "native"; label: string; meta: string; payload: NativeDownloadPayload };
+  | { kind: "browser"; label: string; meta: string; audioOnly?: boolean; payload: DownloadRequestPayload }
+  | { kind: "native"; label: string; meta: string; audioOnly?: boolean; payload: NativeDownloadPayload };
 
+/** With more choices than this, the other codecs of each resolution stay folded. */
+const MAX_UNFOLDED_CHOICES = 8;
 const MIN_VIDEO_HEIGHT = 60;
 /** How long the pointer must rest on an icon before its choices start loading (ms). */
 const PREFETCH_DELAY_MS = 250;
@@ -1103,19 +1105,50 @@ export class Overlay {
     this.frame(t("menuTitle"), body);
   }
 
+  private optionItem(choice: Choice): HTMLElement {
+    const button = el("button", { className: "vd-option", attrs: { type: "button" } }, [
+      el("span", { className: "vd-option-main", text: choice.label }),
+      el("span", { className: "vd-option-meta", text: choice.meta }),
+    ]);
+    button.addEventListener("click", () => void this.begin(choice, button));
+    return el("li", {}, [button]);
+  }
+
+  /**
+   * Every format the source offers: the best of each resolution, then its sound on its own. A long
+   * list (YouTube: three codecs per resolution) folds the other codecs, or the sound would be out
+   * of sight below twenty rows.
+   */
   private renderChoices(title: string, intro: string | null, choices: Choice[]): void {
+    const video = choices.filter((c) => !c.audioOnly);
+    const sound = choices.filter((c) => c.audioOnly);
+    const seen = new Set<string>();
+    const others = choices.length > MAX_UNFOLDED_CHOICES
+      ? video.filter((c) => {
+          if (!seen.has(c.label)) {
+            seen.add(c.label);
+            return false;
+          }
+          return true;
+        })
+      : [];
     const list = el("ul", { className: "vd-list" });
-    for (const choice of choices) {
-      const button = el("button", { className: "vd-option", attrs: { type: "button" } }, [
-        el("span", { className: "vd-option-main", text: choice.label }),
-        el("span", { className: "vd-option-meta", text: choice.meta }),
-      ]);
-      button.addEventListener("click", () => void this.begin(choice, button));
-      list.appendChild(el("li", {}, [button]));
+    for (const choice of video) if (!others.includes(choice)) list.appendChild(this.optionItem(choice));
+    if (sound.length > 0) {
+      list.appendChild(el("li", { className: "vd-section", text: t("audioOnly") }));
+      for (const choice of sound) list.appendChild(this.optionItem(choice));
     }
     const body: Node[] = [];
     if (intro) body.push(el("p", { className: "vd-muted", text: intro }));
     body.push(list);
+    if (others.length > 0) {
+      body.push(
+        el("details", { className: "vd-more" }, [
+          el("summary", { text: t("moreFormats", String(others.length)) }),
+          el("ul", { className: "vd-list" }, others.map((c) => this.optionItem(c))),
+        ]),
+      );
+    }
     this.frame(title, body);
     (list.querySelector("button") as HTMLButtonElement | null)?.focus({ preventScroll: true });
   }
@@ -1262,7 +1295,8 @@ export class Overlay {
       return {
         kind: "browser",
         label,
-        meta: metaFor([formatBytes(v.approxBytes) ? `~${formatBytes(v.approxBytes)}` : undefined, kind]),
+        meta: metaFor([v.audioOnly ? "M4A" : v.codecLabel, formatBytes(v.approxBytes) ? `~${formatBytes(v.approxBytes)}` : undefined, kind]),
+        ...(v.audioOnly ? { audioOnly: true } : {}),
         payload: {
           url: media.url,
           metadata: { ...media, title },
@@ -1329,7 +1363,8 @@ export class Overlay {
       return {
         kind: "native",
         label,
-        meta: metaFor([v.vcodec, v.approxBytes ? `~${formatBytes(v.approxBytes)}` : undefined]),
+        meta: metaFor([v.ext?.toUpperCase(), v.vcodec, v.approxBytes ? `~${formatBytes(v.approxBytes)}` : undefined]),
+        ...(v.audioOnly ? { audioOnly: true } : {}),
         payload: {
           ...(reply.session ? { sessionUrl: url } : {}),
           probeId: result.probeId,
@@ -1404,7 +1439,7 @@ export class Overlay {
         reply = null;
       }
       if (token !== this.renderToken) return;
-      const variants = reply?.success ? (reply.variants ?? []) : [];
+      const variants = reply?.success ? (reply.variants ?? []).filter((v) => !v.audioOnly) : [];
       if (variants.length > 0) {
         body.push(el("p", { className: "vd-section", text: t("recordCopyTitle") }), el("p", { className: "vd-muted", text: t("recordCopyHint") }));
         body.push(

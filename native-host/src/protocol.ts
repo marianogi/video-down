@@ -100,6 +100,8 @@ export interface Variant {
   approxBytes?: number;
   /** Extension the file should end up with, for the name proposed before yt-dlp starts. */
   ext?: string;
+  /** Sound only: `label` then says its codec and bitrate. */
+  audioOnly?: boolean;
 }
 
 export interface PongResponse {

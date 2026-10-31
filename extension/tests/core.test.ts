@@ -171,7 +171,9 @@ describe("bindMedia", () => {
 describe("hlsVariants", () => {
   it("one entry per height, best bitrate, absolute URLs, separate audio", () => {
     const v = hlsVariants(fixture("master.m3u8"), "https://cdn.example.com/show/master.m3u8", 600);
-    expect(v.map((x) => x.label)).toEqual(["1080p", "720p", "360p"]);
+    expect(v.filter((x) => !x.audioOnly).map((x) => x.label)).toEqual(["1080p", "720p", "360p"]);
+    // Its separate audio, on its own and after the videos; the size is unknown without a bitrate.
+    expect(v.at(-1)).toMatchObject({ audioOnly: true, manifestQuality: { videoPlaylistUrl: null, audioOnly: true } });
     expect(v[0]!.manifestQuality).toEqual({
       videoPlaylistUrl: "https://cdn.example.com/v1080/index.m3u8",
       audioPlaylistUrl: "https://cdn.example.com/show/audio/en.m3u8",
@@ -185,10 +187,53 @@ describe("hlsVariants", () => {
   });
 });
 
+describe("hlsVariants: formats and sound", () => {
+  const master = (lines: string[]) => ["#EXTM3U", ...lines].join("\n");
+
+  it("lists each codec of a height, and a variant with only sound as sound", () => {
+    const v = hlsVariants(
+      master([
+        '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
+        "h264.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080,CODECS="hvc1.2.4.L120,mp4a.40.2"',
+        "hevc.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
+        "h264-low.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2"',
+        "sound.m3u8",
+      ]),
+      "https://x/m.m3u8",
+    );
+    expect(v.map((x) => [x.label, x.codecLabel, x.audioOnly])).toEqual([
+      ["1080p", "H.264", undefined],
+      ["1080p", "HEVC", undefined],
+      ["AAC 128 kbps", undefined, true],
+    ]);
+    expect(v[2]!.manifestQuality).toEqual({ videoPlaylistUrl: null, audioPlaylistUrl: "https://x/sound.m3u8", audioOnly: true });
+  });
+
+  it("offers no sound when it is inside the video, even if declared without an address", () => {
+    const v = hlsVariants(
+      master([
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES',
+        '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS="avc1.64001e,mp4a.40.2",AUDIO="a"',
+        "v.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=500000',
+        "unknown.m3u8",
+      ]),
+      "https://x/m.m3u8",
+    );
+    expect(v.some((x) => x.audioOnly)).toBe(false);
+    expect(v.map((x) => x.label)).toEqual(["360p", "500 kbps"]);
+  });
+});
+
 describe("dashVariants", () => {
   it("one entry per video representation, size includes audio", () => {
     const v = dashVariants(fixture("clear.mpd"), "https://cdn.example.com/manifest.mpd");
-    expect(v.map((x) => x.label)).toEqual(["1080p", "480p"]);
+    expect(v.map((x) => x.label)).toEqual(["1080p", "480p", "en 128 kbps"]);
+    expect(v[2]!.manifestQuality).toMatchObject({ audioOnly: true, selectedAudioBandwidth: 128_000 });
+    expect(v[2]!.approxBytes).toBe((128_000 * 60) / 8);
     expect(v[0]!.manifestQuality).toEqual({ selectedBandwidth: 4_000_000 });
     expect(v[0]!.approxBytes).toBe(Math.round(((4_000_000 + 128_000) * 60) / 8));
   });
@@ -663,7 +708,9 @@ describe("HLS audio paired with each quality", () => {
     const url = "https://video.twimg.com/amplify_video/2039532852929310720/pl/efX7irkUSKsFtEqx.m3u8?tag=21&v=59e";
     const variants = hlsVariants(fixture("x-master-audio-groups.m3u8"), url, 30);
     const audioOf = (label: string) => variants.find((v) => v.label === label)?.manifestQuality?.audioPlaylistUrl ?? "";
-    expect(variants.map((v) => v.label)).toEqual(["2160p", "1080p", "720p", "360p", "270p"]);
+    expect(variants.filter((v) => !v.audioOnly).map((v) => v.label)).toEqual(["2160p", "1080p", "720p", "360p", "270p"]);
+    // X's three audio qualities, from the id of their group, the best first.
+    expect(variants.filter((v) => v.audioOnly).map((v) => v.bandwidth)).toEqual([128_000, 64_000, 32_000]);
     expect(audioOf("720p")).toMatch(/\/mp4a\/128000\//);
     expect(audioOf("1080p")).toMatch(/\/mp4a\/128000\//);
     expect(audioOf("360p")).toMatch(/\/mp4a\/64000\//);

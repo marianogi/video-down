@@ -237,7 +237,8 @@ export class HlsDownloadHandler extends BasePlaylistHandler {
 
       await this.updateStage(stateId, DownloadStage.SAVING, "Saving file...", SAVING_STAGE_PERCENTAGE);
 
-      const finalFilename = `${baseFileName}.mp4`;
+      const fileExtension = videoPlaylistUrl ? "mp4" : "m4a";
+      const finalFilename = `${baseFileName}.${fileExtension}`;
       const filePath = await saveBlobUrlToFile(
         blobUrl,
         finalFilename,
@@ -253,7 +254,7 @@ export class HlsDownloadHandler extends BasePlaylistHandler {
 
       return {
         filePath,
-        fileExtension: "mp4",
+        fileExtension,
       };
     } catch (error) {
       if (error instanceof CancellationError && this.shouldSaveOnCancel?.()) {

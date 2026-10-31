@@ -102,6 +102,7 @@ export function parseMasterPlaylist(
     height: playlist.attributes.RESOLUTION?.height,
     width: playlist.attributes.RESOLUTION?.width,
     ...(typeof playlist.attributes.AUDIO === "string" ? { audioGroup: playlist.attributes.AUDIO } : {}),
+    ...(typeof playlist.attributes.CODECS === "string" ? { codecs: playlist.attributes.CODECS } : {}),
   }));
 
   // Parse audio playlists. An EXT-X-MEDIA without URI is legal (RFC 8216 §4.3.4.1): that audio
@@ -121,6 +122,8 @@ export function parseMasterPlaylist(
           height: undefined,
           groupId: key,
           isDefault: entry.default === true,
+          name: label,
+          ...(typeof entry.language === "string" ? { language: entry.language } : {}),
         };
       });
     },

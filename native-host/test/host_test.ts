@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertThrows } from "./assert.ts";
-import { cookieFileText, cookieMatchesUrl, parseCookies, parseRequest, parseSaveTarget, isSafeHttpUrl } from "../src/protocol.ts";
+import { cookieFileText, cookieMatchesUrl, parseCookies, parseRequest, parseSaveTarget, isSafeHttpUrl, isSafeVariantId } from "../src/protocol.ts";
 import { buildVariants, outputTemplateText, publicVariants, selectorForHeight } from "../src/variants.ts";
 import { parseProgressLine, ProgressTracker, summariseError } from "../src/progress.ts";
 import { encodeMessage, FrameDecoder, MAX_INCOMING_BYTES } from "../src/messaging.ts";
@@ -70,7 +70,7 @@ Deno.test("buildVariants groups by height, prefers H.264 and adds AAC size", () 
   const built = buildVariants(youtubeLike);
   assertEquals(built.drm, false);
   assertEquals(built.isLive, false);
-  assertEquals(built.variants.map((v) => v.id), ["h2160", "h1080", "h720", "h360"]);
+  assertEquals(built.variants.filter((v) => /^h\d+$/.test(v.id)).map((v) => v.id), ["h2160", "h1080", "h720", "h360"]);
   const v1080 = built.variants.find((v) => v.id === "h1080")!;
   assertEquals(v1080.vcodec, "H.264");
   assertEquals(v1080.label, "1080p60");
@@ -131,6 +131,54 @@ Deno.test("buildVariants expects MP4 when merging and the format's own extension
   assertEquals(best.variants[0]!.ext, "mov");
   const odd = buildVariants({ formats: [{ ext: "unknown_video", vcodec: "unknown", acodec: "aac" }] });
   assertEquals(odd.variants[0]!.ext, "mp4");
+});
+
+Deno.test("buildVariants lists each codec of a height, the preferred one first", () => {
+  const built = buildVariants(youtubeLike);
+  const at1080 = built.variants.filter((v) => v.height === 1080);
+  assertEquals(at1080.map((v) => v.vcodec), ["H.264", "AV1"]);
+  assertEquals(at1080[0]!.id, "h1080");
+  assertEquals(at1080[0]!.selector, selectorForHeight(1080));
+  assert(at1080[1]!.selector.startsWith("bv[height=1080][vcodec^=av01][fps>=48]+ba[acodec^=mp4a]/"));
+  assert(at1080[1]!.selector.endsWith("/b"));
+  assertEquals(new Set(built.variants.map((v) => v.id)).size, built.variants.length);
+  // The first entry of each height is still the one a stream handed over from the browser picks.
+  assertEquals(built.variants.find((v) => v.height === 2160)!.vcodec, "VP9");
+});
+
+Deno.test("buildVariants lists the sound on its own, AAC first", () => {
+  const built = buildVariants({
+    duration: 100,
+    formats: [
+      { format_id: "249", ext: "webm", vcodec: "none", acodec: "opus", abr: 50, tbr: 50, filesize: 600_000 },
+      { format_id: "251", ext: "webm", vcodec: "none", acodec: "opus", abr: 160, tbr: 160 },
+      { format_id: "140", ext: "m4a", vcodec: "none", acodec: "mp4a.40.2", abr: 129, tbr: 129 },
+      { format_id: "140-drc", ext: "m4a", vcodec: "none", acodec: "mp4a.40.2", abr: 130, tbr: 130 },
+      { format_id: "91-es", ext: "mp4", vcodec: "none", acodec: "mp4a.40.5", tbr: 48, language: "es" },
+      { format_id: "x", ext: "m4a", vcodec: "none", acodec: "mp4a", has_drm: true },
+      { format_id: "136", ext: "mp4", vcodec: "avc1", acodec: "none", height: 720 },
+    ],
+  });
+  assertEquals(built.variants[0]!.height, 720);
+  const sound = built.variants.filter((v) => v.audioOnly);
+  assertEquals(sound.map((v) => v.label), ["AAC 130 kbps", "AAC 48 kbps es", "Opus 160 kbps", "Opus 50 kbps"]);
+  assertEquals(sound.map((v) => v.ext), ["m4a", "mp4", "webm", "webm"]);
+  assertEquals(sound[0]!.selector, "140-drc/ba");
+  assertEquals(sound[1]!.selector, "91-es/ba[language=es]/ba");
+  assertEquals(sound[3]!.approxBytes, 600_000);
+  assert(sound.every((v) => isSafeVariantId(v.id)));
+  assert(built.variants.every((v) => isSafeVariantId(v.id)));
+});
+
+Deno.test("buildVariants offers only sound when there is no image, and no sound if it is protected", () => {
+  const onlySound = buildVariants({ formats: [{ format_id: "a", ext: "mp3", vcodec: "none", acodec: "mp3", abr: 128 }] });
+  assertEquals(onlySound.variants.map((v) => v.label), ["MP3 128 kbps"]);
+  const unnamed = { format_id: "233", ext: "mp4", vcodec: "none", acodec: null };
+  assertEquals(buildVariants({ formats: [unnamed] }).variants.map((v) => v.label), ["Audio"]);
+  const withNamed = buildVariants({ formats: [unnamed, { format_id: "a", ext: "m4a", vcodec: "none", acodec: "mp4a", abr: 128 }] });
+  assertEquals(withNamed.variants.map((v) => v.label), ["AAC 128 kbps"]);
+  const protectedOnly = buildVariants({ formats: [{ format_id: "a", ext: "m4a", vcodec: "none", acodec: "mp4a", has_drm: true }] });
+  assertEquals(protectedOnly.variants.map((v) => v.id), ["best"]);
 });
 
 Deno.test("a percent sign in a name is literal text for yt-dlp", () => {

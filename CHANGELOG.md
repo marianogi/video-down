@@ -7,6 +7,29 @@ paquetes se niega a empaquetar código distinto con un número ya publicado.
 En `chrome://extensions`, las compilaciones que no son de publicación aparecen como
 `<versión>-dev (<commit>)`.
 
+## 0.2.18 (2026-11-01)
+
+La 0.2.17 se instaló en el equipo de desarrollo y no llegó a publicarse: sus cambios salen con esta versión.
+
+- **El menú ofrece todos los formatos que da la web, también solo el audio.**
+  - **Por yt-dlp (YouTube, Instagram, X…):** antes salía una opción por resolución. Ahora sale una por
+    resolución, códec y frecuencia de imagen, con su tipo de fichero y su tamaño. La primera de cada
+    resolución sigue siendo la más compatible. Si hay más de 8 opciones, los demás códecs quedan en
+    **«Más formatos de vídeo»**, para que el audio no quede debajo de veinte filas.
+  - **Sección «Solo audio»:** una opción por códec, tipo de fichero, idioma y calidad, por ejemplo
+    `AAC 130 kbps`, `Opus 129 kbps`. El fichero sale con su extensión real (`.m4a`, `.webm`).
+  - **HLS por el navegador:** cada códec de una misma resolución, y como solo audio cada pista de audio
+    separada y cada variante que declare solo sonido. La calidad se saca del `GROUP-ID` si la lista no da otra.
+  - **DASH por el navegador:** cada pista de audio por separado.
+  - **Límite:** si el sonido va dentro del vídeo (HLS sin pista separada), no se ofrece solo audio.
+- **El solo audio en HLS no podía funcionar.** La mezcla buscaba los fragmentos con el identificador del
+  vídeo, y el audio se guarda con el suyo. Además, DASH no tenía ese caso. Ahora van los dos, y el fichero
+  se guarda como `.m4a` con tipo `audio/mp4`.
+- Un HLS grande que se pasa a yt-dlp conserva la elección de solo audio. La grabación de directos no ofrece
+  estas opciones de audio.
+- Pruebas: 58 de extremo a extremo y opcionales (descargas reales de solo audio en HLS, DASH y YouTube, con
+  `ffprobe`: AAC y sin imagen), 78 unitarias de la extensión y 23 del componente nativo.
+
 ## 0.2.17 (2026-10-31)
 
 - **El diálogo «Guardar como» propone un nombre útil y con su extensión.** En las descargas por yt-dlp

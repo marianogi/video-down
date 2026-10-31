@@ -171,6 +171,10 @@ export const OVERLAY_CSS = `
   text-align: left;
   cursor: pointer;
 }
+.vd-more { margin-top: 8px; }
+.vd-more summary { cursor: pointer; color: var(--vd-text-2); font-size: 12px; padding: 4px 0; }
+.vd-more summary:focus-visible { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
+.vd-more .vd-list { margin-top: 6px; }
 .vd-option:hover { border-color: var(--vd-accent); }
 .vd-option:focus-visible { outline: 2px solid var(--vd-accent); outline-offset: 1px; }
 .vd-option[disabled] { opacity: 0.55; cursor: default; }

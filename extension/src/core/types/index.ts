@@ -153,5 +153,10 @@ export interface Level {
   /** An audio rendition: its GROUP-ID, and whether it is the group's DEFAULT */
   groupId?: string;
   isDefault?: boolean;
+  /** A variant: its CODECS attribute */
+  codecs?: string;
+  /** An audio rendition: its NAME and LANGUAGE */
+  name?: string;
+  language?: string;
 }
 

@@ -102,6 +102,22 @@ export function getAudioPlaylist(manifest: MpdManifest): ParsedPlaylist | null {
 }
 
 /**
+ * The audio track chosen in the menu: by its group and bandwidth, or the first if the manifest
+ * no longer has it.
+ */
+export function getAudioPlaylistBy(
+  manifest: MpdManifest,
+  group: string | undefined,
+  bandwidth: number | undefined,
+): ParsedPlaylist | null {
+  const groups = manifest.mediaGroups?.AUDIO?.audio ?? {};
+  const match = (group !== undefined ? groups[group]?.playlists : undefined)?.find(
+    (p) => p.attributes?.BANDWIDTH === bandwidth,
+  );
+  return match ? mpdPlaylistToParsedPlaylist(match) : getAudioPlaylist(manifest);
+}
+
+/**
  * Detect whether an MPD describes a live (dynamic) stream.
  * Checks for `type="dynamic"` in the raw XML — more reliable than inspecting
  * the parsed output, which always sets minimumUpdatePeriod.

@@ -560,7 +560,11 @@ function resolveFilename(payload: DownloadRequestPayload): string {
   const isStream =
     metadata.format === VideoFormat.HLS || metadata.format === VideoFormat.M3U8 || metadata.format === VideoFormat.DASH;
   // A direct file's real type is checked again when it starts (HEAD), for URLs that do not show it.
-  const extension = isStream ? "mp4" : metadata.fileExtension || detectExtensionFromUrl(url) || "mp4";
+  const extension = payload.manifestQuality?.audioOnly
+    ? "m4a"
+    : isStream
+      ? "mp4"
+      : metadata.fileExtension || detectExtensionFromUrl(url) || "mp4";
   const base = mediaFileBase({
     channel: payload.channel || payload.website?.replace(/^www\./, ""),
     title: payload.tabTitle,
@@ -622,7 +626,7 @@ async function startBrowserDownload(payload: DownloadRequestPayload, origin?: Or
   }
 
   const q = payload.manifestQuality;
-  const dedupeKey = `${normalizeUrl(payload.url)}|${q?.videoPlaylistUrl ?? ""}|${q?.audioPlaylistUrl ?? ""}|${q?.selectedBandwidth ?? ""}`;
+  const dedupeKey = `${normalizeUrl(payload.url)}|${q?.videoPlaylistUrl ?? ""}|${q?.audioPlaylistUrl ?? ""}|${q?.selectedBandwidth ?? ""}|${q?.audioGroup ?? ""}|${q?.selectedAudioBandwidth ?? ""}`;
   if (activeDedupeKeys.has(dedupeKey)) {
     return { success: false, error: chrome.i18n.getMessage("alreadyDownloading") };
   }
@@ -898,10 +902,12 @@ async function startNativeForStream(
   try {
     const { result: probe, session } = await probeWithSession(payload.url, payload.metadata.pageUrl);
     const wanted = payload.variantHeight;
-    const pick =
-      (wanted && probe.variants.find((v) => v.height === wanted)) ||
-      (wanted && probe.variants.find((v) => (v.height ?? 0) <= wanted)) ||
-      probe.variants[0];
+    const videos = probe.variants.filter((v) => !v.audioOnly);
+    const pick = payload.manifestQuality?.audioOnly
+      ? probe.variants.find((v) => v.audioOnly)
+      : (wanted && videos.find((v) => v.height === wanted)) ||
+        (wanted && videos.find((v) => (v.height ?? 0) <= wanted)) ||
+        videos[0];
     if (!pick) return { success: false, error: chrome.i18n.getMessage("noVariants") };
     return await startNativeDownload(
       {

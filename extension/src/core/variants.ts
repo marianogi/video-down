@@ -11,6 +11,10 @@ export interface ManifestQuality {
   videoPlaylistUrl?: string | null;
   audioPlaylistUrl?: string | null;
   selectedBandwidth?: number;
+  /** Only the sound. HLS: only audioPlaylistUrl is downloaded. DASH: this group and bandwidth. */
+  audioOnly?: boolean;
+  audioGroup?: string;
+  selectedAudioBandwidth?: number;
 }
 
 export interface BrowserVariant {
@@ -23,6 +27,10 @@ export interface BrowserVariant {
   /** Bits per second (video + audio when the manifest says so). */
   bandwidth?: number;
   codecs?: string;
+  /** "H.264", "HEVC"… when the manifest says */
+  codecLabel?: string;
+  /** Sound only: `label` then says its language or codec and its bitrate */
+  audioOnly?: boolean;
   approxBytes?: number;
   /** Passed back unchanged to the download request. Undefined = whole playlist. */
   manifestQuality?: ManifestQuality;
@@ -37,11 +45,43 @@ function estimate(bandwidth: number | undefined, duration: number | undefined): 
   return Math.round((bandwidth * duration) / 8);
 }
 
-/** Keep the highest-bitrate entry per height, sorted from best to worst. */
-function dedupeByHeight<T extends { height?: number; bandwidth?: number }>(items: T[]): T[] {
+const VIDEO_CODECS: Array<[RegExp, string]> = [
+  [/\bavc[13]/i, "H.264"],
+  [/\b(?:hvc1|hev1)/i, "HEVC"],
+  [/\bdv[ah]/i, "Dolby Vision"],
+  [/\bvp0?9/i, "VP9"],
+  [/\bav01/i, "AV1"],
+];
+const AUDIO_CODECS: Array<[RegExp, string]> = [
+  [/\bmp4a/i, "AAC"],
+  [/\bopus/i, "Opus"],
+  [/\b(?:ac-3|ac3)/i, "AC-3"],
+  [/\b(?:ec-3|eac3)/i, "E-AC-3"],
+  [/\bflac/i, "FLAC"],
+];
+
+function codecLabel(table: Array<[RegExp, string]>, codecs: string | undefined): string | undefined {
+  return codecs ? table.find(([re]) => re.test(codecs))?.[1] : undefined;
+}
+
+/** A variant whose CODECS name only sound. Without CODECS nothing can be said: it stays a video. */
+function isSoundOnly(codecs: string | undefined): boolean {
+  return !!codecs && !codecLabel(VIDEO_CODECS, codecs) && !!codecLabel(AUDIO_CODECS, codecs);
+}
+
+/** The bitrate an audio group's id usually carries: "audio-128000", "audio-aacl-96". */
+function bitrateFromGroup(group: string | undefined): number | undefined {
+  const found = group?.match(/(\d{2,7})(?!.*\d)/)?.[1];
+  if (!found) return undefined;
+  const n = Number(found);
+  return n >= 8000 ? n : n >= 8 ? n * 1000 : undefined;
+}
+
+/** Keep the highest-bitrate entry per height and codec, sorted from best to worst. */
+function dedupeByHeight<T extends { height?: number; bandwidth?: number; codecLabel?: string | undefined }>(items: T[]): T[] {
   const best = new Map<string, T>();
   for (const item of items) {
-    const key = item.height ? `h${item.height}` : `b${item.bandwidth ?? 0}`;
+    const key = `${item.height ? `h${item.height}` : `b${item.bandwidth ?? 0}`}|${item.codecLabel ?? ""}`;
     const current = best.get(key);
     if (!current || (item.bandwidth ?? 0) > (current.bandwidth ?? 0)) best.set(key, item);
   }
@@ -62,7 +102,7 @@ export function hlsVariants(playlistText: string, playlistUrl: string, duration?
   const levels = parseMasterPlaylist(playlistText, playlistUrl);
   const seenUris = new Set<string>();
   const video = levels.filter((l) => {
-    if (l.type !== "stream" || seenUris.has(l.uri)) return false;
+    if (l.type !== "stream" || seenUris.has(l.uri) || isSoundOnly(l.codecs)) return false;
     seenUris.add(l.uri);
     return true;
   });
@@ -73,21 +113,49 @@ export function hlsVariants(playlistText: string, playlistUrl: string, duration?
     bandwidth: l.bitrate,
     uri: l.uri,
     audioUri: audioFor(levels, l)?.uri ?? null,
+    codecLabel: codecLabel(VIDEO_CODECS, l.codecs),
   }));
 
-  return dedupeByHeight(candidates).map((c) => {
+  const videos = dedupeByHeight(candidates).map((c) => {
     const v: BrowserVariant = {
-      id: `h${c.height ?? 0}-${c.bandwidth ?? 0}`,
+      id: `h${c.height ?? 0}-${c.bandwidth ?? 0}-${c.codecLabel ?? ""}`,
       label: c.height ? `${c.height}p` : c.bandwidth ? bitrateLabel(c.bandwidth) : "original",
       manifestQuality: { videoPlaylistUrl: c.uri, audioPlaylistUrl: c.audioUri },
     };
     if (c.height) v.height = c.height;
     if (c.width) v.width = c.width;
     if (c.bandwidth) v.bandwidth = c.bandwidth;
+    if (c.codecLabel) v.codecLabel = c.codecLabel;
     const bytes = estimate(c.bandwidth, duration);
     if (bytes) v.approxBytes = bytes;
     return v;
   });
+
+  // The sound: separate audio renditions, and variants that carry only sound.
+  const sounds = new Map<string, { name: string; bandwidth: number | undefined }>();
+  for (const l of levels) {
+    if (sounds.has(l.uri)) continue;
+    if (l.type === "audio") {
+      sounds.set(l.uri, { name: l.name || l.language || "Audio", bandwidth: bitrateFromGroup(l.groupId) });
+    } else if (isSoundOnly(l.codecs)) {
+      sounds.set(l.uri, { name: codecLabel(AUDIO_CODECS, l.codecs) ?? "Audio", bandwidth: l.bitrate });
+    }
+  }
+  const audios = [...sounds.entries()]
+    .sort((a, b) => (b[1].bandwidth ?? 0) - (a[1].bandwidth ?? 0))
+    .map(([uri, s], i) => {
+      const v: BrowserVariant = {
+        id: `a${i}`,
+        label: s.bandwidth ? `${s.name} ${bitrateLabel(s.bandwidth)}` : s.name,
+        audioOnly: true,
+        manifestQuality: { videoPlaylistUrl: null, audioPlaylistUrl: uri, audioOnly: true },
+      };
+      if (s.bandwidth) v.bandwidth = s.bandwidth;
+      const bytes = estimate(s.bandwidth, duration);
+      if (bytes) v.approxBytes = bytes;
+      return v;
+    });
+  return [...videos, ...audios];
 }
 
 /**
@@ -116,11 +184,12 @@ export function dashVariants(mpdText: string, mpdUrl: string, duration?: number)
     width: p.attributes?.RESOLUTION?.width,
     bandwidth: p.attributes?.BANDWIDTH,
     codecs: p.attributes?.CODECS,
+    codecLabel: codecLabel(VIDEO_CODECS, p.attributes?.CODECS),
   }));
 
-  return dedupeByHeight(candidates).map((c) => {
+  const videos = dedupeByHeight(candidates).map((c) => {
     const v: BrowserVariant = {
-      id: `h${c.height ?? 0}-${c.bandwidth ?? 0}`,
+      id: `h${c.height ?? 0}-${c.bandwidth ?? 0}-${c.codecLabel ?? ""}`,
       label: c.height ? `${c.height}p` : c.bandwidth ? bitrateLabel(c.bandwidth) : "original",
       manifestQuality: c.bandwidth ? { selectedBandwidth: c.bandwidth } : undefined,
     };
@@ -128,10 +197,33 @@ export function dashVariants(mpdText: string, mpdUrl: string, duration?: number)
     if (c.width) v.width = c.width;
     if (c.bandwidth) v.bandwidth = c.bandwidth;
     if (c.codecs) v.codecs = c.codecs;
+    if (c.codecLabel) v.codecLabel = c.codecLabel;
     const bytes = estimate((c.bandwidth ?? 0) + audioBandwidth || undefined, total);
     if (bytes) v.approxBytes = bytes;
     return v;
   });
+
+  // Each audio track, on its own.
+  const audios: BrowserVariant[] = [];
+  for (const [group, entry] of Object.entries(audioGroup ?? {})) {
+    for (const playlist of entry.playlists ?? []) {
+      const bandwidth = playlist.attributes?.BANDWIDTH;
+      const language = (entry as { language?: string }).language;
+      const name = (language && language !== "und" ? language : "") || codecLabel(AUDIO_CODECS, playlist.attributes?.CODECS) || "Audio";
+      const v: BrowserVariant = {
+        id: `a${audios.length}`,
+        label: bandwidth ? `${name} ${bitrateLabel(bandwidth)}` : name,
+        audioOnly: true,
+        manifestQuality: { audioOnly: true, audioGroup: group, ...(bandwidth ? { selectedAudioBandwidth: bandwidth } : {}) },
+      };
+      if (bandwidth) v.bandwidth = bandwidth;
+      const bytes = estimate(bandwidth, total);
+      if (bytes) v.approxBytes = bytes;
+      audios.push(v);
+    }
+  }
+  audios.sort((a, b) => (b.bandwidth ?? 0) - (a.bandwidth ?? 0));
+  return [...videos, ...audios];
 }
 
 export function variantsFor(

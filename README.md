@@ -919,6 +919,9 @@ Gatekeeper, y cargar la extensión en Google Chrome para Mac.
 
 ## Limitaciones conocidas
 
+- **Solo audio.** Se ofrece cuando la web da el sonido por separado (lo habitual en YouTube, Instagram y
+  DASH). Si en un HLS el sonido va dentro del vídeo, no sale esa opción. No se convierte a MP3: se guarda
+  el audio tal como viene (`.m4a`, `.webm`…), sin perder calidad.
 - **El nombre propuesto y otras extensiones de descargas.** Si otra extensión escucha
   `chrome.downloads.onDeterminingFilename` (la de Internet Download Manager lo hace) y se ha instalado o
   actualizado después que video-down, Chrome vuelve a proponer «descarga» o un código. Se arregla pulsando

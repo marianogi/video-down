@@ -30,6 +30,7 @@ import {
   getVideoPlaylist,
   getVideoPlaylistByBandwidth,
   getAudioPlaylist,
+  getAudioPlaylistBy,
 } from "../../parsers/mpd-parser";
 
 export class DashDownloadHandler extends BasePlaylistHandler {
@@ -55,6 +56,7 @@ export class DashDownloadHandler extends BasePlaylistHandler {
     abortSignal?: AbortSignal,
     pageUrl?: string,
     selectedBandwidth?: number,
+    audioOnly?: { group: string | undefined; bandwidth: number | undefined },
   ): Promise<{ filePath: string; fileExtension?: string }> {
     this.resetDownloadState(stateId, abortSignal);
     const audioId = this.downloadId + "_a";
@@ -74,28 +76,36 @@ export class DashDownloadHandler extends BasePlaylistHandler {
 
       const manifest = parseManifest(mpdText, mpdUrl);
 
-      const videoPlaylist = selectedBandwidth
-        ? getVideoPlaylistByBandwidth(manifest, selectedBandwidth)
-        : getVideoPlaylist(manifest);
-      if (!videoPlaylist) {
+      const videoPlaylist = audioOnly
+        ? null
+        : selectedBandwidth
+          ? getVideoPlaylistByBandwidth(manifest, selectedBandwidth)
+          : getVideoPlaylist(manifest);
+      if (!audioOnly && !videoPlaylist) {
         throw new Error("No video streams found in MPD manifest");
       }
 
-      const audioPlaylist = getAudioPlaylist(manifest);
+      const audioPlaylist = audioOnly
+        ? getAudioPlaylistBy(manifest, audioOnly.group, audioOnly.bandwidth)
+        : getAudioPlaylist(manifest);
+      if (audioOnly && !audioPlaylist) {
+        throw new Error("No audio streams found in MPD manifest");
+      }
 
       throwIfAborted(this.abortSignal);
 
       // Download video stream (init at index 0, media at 1..N)
-      const videoFragments = parseLevelsPlaylist(videoPlaylist, 0);
-      if (videoFragments.length === 0) {
-        throw new Error("No video segments found in MPD manifest");
+      const downloadJobs: Promise<void>[] = [];
+      this.videoLength = 0;
+      if (videoPlaylist) {
+        const videoFragments = parseLevelsPlaylist(videoPlaylist, 0);
+        if (videoFragments.length === 0) {
+          throw new Error("No video segments found in MPD manifest");
+        }
+        logger.info(`Found ${videoFragments.length} DASH video fragments`);
+        this.videoLength = videoFragments.length;
+        downloadJobs.push(this.downloadAllFragments(videoFragments, this.downloadId, stateId));
       }
-      logger.info(`Found ${videoFragments.length} DASH video fragments`);
-      this.videoLength = videoFragments.length;
-
-      const downloadJobs: Promise<void>[] = [
-        this.downloadAllFragments(videoFragments, this.downloadId, stateId),
-      ];
 
       // Download audio stream concurrently if present (separate namespace)
       this.audioLength = 0;
@@ -144,9 +154,10 @@ export class DashDownloadHandler extends BasePlaylistHandler {
         SAVING_STAGE_PERCENTAGE,
       );
 
+      const fileExtension = audioOnly ? "m4a" : "mp4";
       const filePath = await saveBlobUrlToFile(
         blobUrl,
-        `${baseFileName}.mp4`,
+        `${baseFileName}.${fileExtension}`,
         stateId,
       );
 
@@ -156,7 +167,7 @@ export class DashDownloadHandler extends BasePlaylistHandler {
       await this.markCompleted(stateId, filePath, completionMessage);
 
       logger.info(`DASH download completed: ${filePath}`);
-      return { filePath, fileExtension: "mp4" };
+      return { filePath, fileExtension };
     } catch (error) {
       if (error instanceof CancellationError && this.shouldSaveOnCancel?.()) {
         try {

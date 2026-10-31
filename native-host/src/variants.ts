@@ -19,6 +19,8 @@ export interface YtdlpFormat {
   filesize?: number | null;
   filesize_approx?: number | null;
   tbr?: number | null;
+  abr?: number | null;
+  language?: string | null;
   has_drm?: boolean | string | null;
   format_note?: string | null;
 }
@@ -103,6 +105,62 @@ function sizeOf(f: YtdlpFormat | undefined, duration?: number): number | undefin
   return undefined;
 }
 
+const AUDIO_CODECS: Array<{ prefix: string[]; label: string }> = [
+  { prefix: ["mp4a", "aac"], label: "AAC" },
+  { prefix: ["opus"], label: "Opus" },
+  { prefix: ["vorbis"], label: "Vorbis" },
+  { prefix: ["mp3"], label: "MP3" },
+  { prefix: ["flac"], label: "FLAC" },
+  { prefix: ["ac-3", "ac3"], label: "AC-3" },
+  { prefix: ["ec-3", "eac3"], label: "E-AC-3" },
+];
+
+function audioCodecLabel(acodec: string | null | undefined): string | undefined {
+  const a = (acodec || "").toLowerCase();
+  return AUDIO_CODECS.find((c) => c.prefix.some((p) => a.startsWith(p)))?.label;
+}
+
+/** Sound with no image. A stream's codec may be unknown: only "none" says there is no sound. */
+function isAudioOnly(f: YtdlpFormat): boolean {
+  return f.vcodec === "none" && f.acodec !== "none" && !isDrm(f);
+}
+
+/** One entry per kind of sound: codec, file type, language and bitrate. AAC first, the best first. */
+function audioVariants(formats: YtdlpFormat[], duration?: number): StoredVariant[] {
+  const kinds = new Map<string, YtdlpFormat>();
+  const kbpsOf = (f: YtdlpFormat) => Math.round(f.abr ?? f.tbr ?? 0);
+  const languageOf = (f: YtdlpFormat) => (/^[A-Za-z-]{2,12}$/.test(f.language ?? "") ? f.language! : "");
+  for (const f of formats.filter(isAudioOnly)) {
+    // Bitrates this close are the same audio (YouTube's "-drc" copies).
+    const key = [audioCodecLabel(f.acodec) ?? f.acodec, f.ext, languageOf(f), Math.round(kbpsOf(f) / 16)].join("|");
+    const current = kinds.get(key);
+    if (!current || kbpsOf(f) > kbpsOf(current)) kinds.set(key, f);
+  }
+  const order = (f: YtdlpFormat) => (audioCodecLabel(f.acodec) === "AAC" ? 0 : 1);
+  const all = [...kinds.values()];
+  // A stream with no codec and no bitrate says nothing next to the ones that do (YouTube's HLS copy).
+  const named = all.filter((f) => audioCodecLabel(f.acodec) || kbpsOf(f));
+  return (named.length > 0 ? named : all)
+    .sort((a, b) => order(a) - order(b) || kbpsOf(b) - kbpsOf(a))
+    .map((f, i) => {
+      const kbps = kbpsOf(f);
+      const language = languageOf(f);
+      const name = audioCodecLabel(f.acodec) ?? "Audio";
+      const exact = /^[\w.-]+$/.test(f.format_id ?? "") ? `${f.format_id}/` : "";
+      const v: StoredVariant = {
+        id: `a${i}`,
+        label: [name, kbps ? `${kbps} kbps` : "", language].filter(Boolean).join(" "),
+        audioOnly: true,
+        ext: expectedExt([f], undefined),
+        // The exact format, or the closest if the site renamed it by the time of the download.
+        selector: `${exact}${language ? `ba[language=${language}]/` : ""}ba`,
+      };
+      const size = sizeOf(f, duration);
+      if (size) v.approxBytes = size;
+      return v;
+    });
+}
+
 /** Best audio-only format, preferring AAC (mp4a) so the MP4 merge never re-encodes. */
 function bestAudio(formats: YtdlpFormat[]): YtdlpFormat | undefined {
   const audio = formats.filter((f) => hasAudio(f) && !hasVideo(f) && !isDrm(f));
@@ -133,6 +191,22 @@ export function selectorForHeight(height: number): string {
     `b[height<=${h}]`,
     "b",
   ].join("/");
+}
+
+/**
+ * The same height in a codec other than the preferred one (and at its frame rate, when known),
+ * then whatever selectorForHeight finds if the site no longer offers it.
+ */
+function selectorForCodec(height: number, prefixes: string[], fps: number | undefined): string {
+  const h = Math.trunc(height);
+  const rate = fps ? `[fps>=48]` : "";
+  const a = "ba[acodec^=mp4a]";
+  const exact = prefixes.flatMap((p) => [
+    `bv[height=${h}][vcodec^=${p}]${rate}+${a}`,
+    `bv[height=${h}][vcodec^=${p}]${rate}+ba`,
+    `b[height=${h}][vcodec^=${p}]${rate}`,
+  ]);
+  return [...exact, selectorForHeight(h)].join("/");
 }
 
 export const BEST_SELECTOR = "bv[vcodec^=avc1]+ba[acodec^=mp4a]/bv+ba/b";
@@ -180,48 +254,58 @@ export function buildVariants(info: YtdlpInfo): BuiltVariants {
   }
 
   const audio = bestAudio(formats);
-  const byHeight = new Map<number, YtdlpFormat>();
+  const highFps = (f: YtdlpFormat) => (f.fps && f.fps >= 48 ? Math.round(f.fps) : undefined);
+  // One entry per height, codec and frame rate: each is a different file for the same video.
+  const kinds = new Map<string, YtdlpFormat>();
   for (const f of clearVideo) {
     const h = f.height ?? 0;
     if (h < MIN_HEIGHT) continue;
-    const current = byHeight.get(h);
-    if (!current) {
-      byHeight.set(h, f);
-      continue;
-    }
-    const rank = codecRank(f.vcodec) - codecRank(current.vcodec);
-    if (rank < 0 || (rank === 0 && (f.tbr ?? 0) > (current.tbr ?? 0))) {
-      byHeight.set(h, f);
-    }
+    const key = `${h}|${codecRank(f.vcodec)}|${highFps(f) ?? 0}`;
+    const current = kinds.get(key);
+    if (!current || (f.tbr ?? 0) > (current.tbr ?? 0)) kinds.set(key, f);
   }
 
-  const variants: StoredVariant[] = [...byHeight.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([h, f]) => {
-      const fps = f.fps && f.fps >= 48 ? Math.round(f.fps) : undefined;
-      const videoSize = sizeOf(f, duration);
-      const audioSize = hasAudio(f) ? 0 : sizeOf(audio, duration);
-      const approxBytes =
-        videoSize !== undefined ? videoSize + (audioSize ?? 0) : undefined;
-      const v: StoredVariant = {
-        id: `h${h}`,
-        label: fps ? `${h}p${fps}` : `${h}p`,
-        height: h,
-        selector: selectorForHeight(h),
-        ext: expectedExt(clearVideo.filter((c) => c.height === h), audio),
-      };
-      if (f.width) v.width = f.width;
-      if (fps) v.fps = fps;
-      const codec = codecLabel(f.vcodec);
-      if (codec) v.vcodec = codec;
-      if (approxBytes) v.approxBytes = approxBytes;
-      return v;
-    });
+  const sorted = [...kinds.values()].sort(
+    (a, b) =>
+      b.height! - a.height! ||
+      codecRank(a.vcodec) - codecRank(b.vcodec) ||
+      (highFps(b) ?? 0) - (highFps(a) ?? 0) ||
+      (b.tbr ?? 0) - (a.tbr ?? 0),
+  );
+  const seenHeights = new Set<number>();
+  const variants: StoredVariant[] = [];
+  for (const f of sorted) {
+    const h = f.height!;
+    const fps = highFps(f);
+    const rank = codecRank(f.vcodec);
+    const primary = !seenHeights.has(h);
+    seenHeights.add(h);
+    // A codec we cannot name cannot be asked for: it only stands in when it is all there is.
+    if (!primary && rank === CODEC_ORDER.length) continue;
+    const videoSize = sizeOf(f, duration);
+    const audioSize = hasAudio(f) ? 0 : sizeOf(audio, duration);
+    const approxBytes = videoSize !== undefined ? videoSize + (audioSize ?? 0) : undefined;
+    const v: StoredVariant = {
+      id: primary ? `h${h}` : `h${h}-${rank}-${fps ?? 0}`,
+      label: fps ? `${h}p${fps}` : `${h}p`,
+      height: h,
+      selector: primary ? selectorForHeight(h) : selectorForCodec(h, CODEC_ORDER[rank]!.prefix, fps),
+      ext: expectedExt(clearVideo.filter((c) => c.height === h && codecRank(c.vcodec) === rank), audio),
+    };
+    if (f.width) v.width = f.width;
+    if (fps) v.fps = fps;
+    const codec = codecLabel(f.vcodec);
+    if (codec) v.vcodec = codec;
+    if (approxBytes) v.approxBytes = approxBytes;
+    variants.push(v);
+  }
 
-  if (variants.length === 0) {
+  const sound = audioVariants(formats, duration);
+  if (variants.length === 0 && (clearVideo.length > 0 || sound.length === 0)) {
     // Direct files and sites that expose no resolution metadata.
     variants.push({ id: "best", label: "best", selector: BEST_SELECTOR, ext: expectedExt(formats, audio) });
   }
+  variants.push(...sound);
 
   return { ...base, variants };
 }

@@ -291,9 +291,11 @@ async function processHLSChunks(
         onProgress,
       );
     } else if (audioLength > 0) {
+      // The handlers keep the audio's chunks under their own id.
+      if (audioDownloadId) validateDownloadId(audioDownloadId);
       warning = await processAudioOnly(
         ffmpeg,
-        downloadId,
+        audioDownloadId ?? downloadId,
         audioLength,
         outputFileName,
         onProgress,
@@ -306,8 +308,8 @@ async function processHLSChunks(
     const data = await ffmpeg.readFile(outputFileName);
     onProgress?.(1, "Done");
 
-    // Create blob URL
-    const blob = new Blob([data as BlobPart], { type: "video/mp4" });
+    // Create blob URL. Chrome corrects a file's extension from this type.
+    const blob = new Blob([data as BlobPart], { type: videoLength > 0 ? "video/mp4" : "audio/mp4" });
     const blobUrl = URL.createObjectURL(blob);
 
     // Cleanup output file
@@ -493,6 +495,15 @@ async function processDashChunks(
         outputFileName,
         onProgress,
       );
+    } else if (audioLength > 0) {
+      if (audioDownloadId) validateDownloadId(audioDownloadId);
+      warning = await processDashSingleStream(
+        ffmpeg,
+        audioDownloadId ?? downloadId,
+        audioLength,
+        outputFileName,
+        onProgress,
+      );
     } else {
       throw new Error("No DASH chunks to process");
     }
@@ -500,7 +511,7 @@ async function processDashChunks(
     const data = await ffmpeg.readFile(outputFileName);
     onProgress?.(1, "Done");
 
-    const blob = new Blob([data as BlobPart], { type: "video/mp4" });
+    const blob = new Blob([data as BlobPart], { type: videoLength > 0 ? "video/mp4" : "audio/mp4" });
     const blobUrl = URL.createObjectURL(blob);
 
     try {

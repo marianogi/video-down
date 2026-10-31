@@ -129,6 +129,9 @@ export class DownloadManager {
       videoPlaylistUrl?: string | null;
       audioPlaylistUrl?: string | null;
       selectedBandwidth?: number;
+      audioOnly?: boolean;
+      audioGroup?: string;
+      selectedAudioBandwidth?: number;
     },
     isManual?: boolean,
     abortSignal?: AbortSignal,
@@ -207,6 +210,9 @@ export class DownloadManager {
           abortSignal,
           metadata.pageUrl,
           manifestQuality?.selectedBandwidth,
+          manifestQuality?.audioOnly
+            ? { group: manifestQuality.audioGroup, bandwidth: manifestQuality.selectedAudioBandwidth }
+            : undefined,
         );
       } else {
         throw new Error(`Unsupported format: ${format}`);

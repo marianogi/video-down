@@ -727,6 +727,40 @@ test("3 · DASH: video representations listed, audio merged", async ({ page, bas
   await downloadAndCheck(page, downloads, /360p/, { height: 360 });
 });
 
+/** Choose a sound-only option and check the file holds sound and no image. */
+async function downloadSoundAndCheck(page: Page, downloads: string, option: RegExp) {
+  const since = Date.now() - 1000;
+  await expect(menu(page).getByText("Audio only", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await menu(page).getByRole("button", { name: option }).click();
+  await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 90_000 });
+  await expect.poll(() => newestFile(downloads, since), { timeout: 15_000 }).not.toBeNull();
+  const info = probe(newestFile(downloads, since)!);
+  expect(info.audio).toBe("aac");
+  expect(info.video).toBeUndefined();
+}
+
+test("3b · DASH: its audio track on its own", async ({ page, baseUrl, downloads }) => {
+  await page.goto(`${baseUrl}/dash.html`);
+  await openDownload(page);
+  await downloadSoundAndCheck(page, downloads, /kbps/);
+});
+
+test("2o · HLS with a separate audio rendition: on its own, with the videos still listed first", async ({ page, baseUrl, downloads }) => {
+  await page.goto(`${baseUrl}/hls-sound.html`);
+  await openDownload(page);
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  const labels = await menu(page).locator(".vd-option-main").allTextContents();
+  expect(labels).toEqual(["720p", "360p", "English 96 kbps"]);
+  await downloadSoundAndCheck(page, downloads, /English 96 kbps/);
+});
+
+test("2p · HLS whose sound is inside the video: no audio option is promised", async ({ page, baseUrl }) => {
+  await page.goto(`${baseUrl}/hls.html`);
+  await openDownload(page);
+  await expect(menu(page).getByRole("button", { name: /720p/ })).toBeVisible({ timeout: 15_000 });
+  await expect(menu(page).getByText("Audio only", { exact: true })).toHaveCount(0);
+});
+
 test("8a · DRM declared in the DASH manifest: warning, no resolutions", async ({ page, baseUrl }) => {
   await page.goto(`${baseUrl}/drm-dash.html`);
   await openDownload(page);
@@ -916,7 +950,8 @@ test("4 · YouTube through the native component, saved where Chrome saves (VD_E2
   // A whole video on a real MSE player: its duration does not grow, so it is not taken for a live one.
   await expect(recButton(page)).toBeHidden();
   await expect(menu(page).getByText(/native component/i)).toBeVisible({ timeout: 60_000 });
-  await menu(page).getByRole("button", { name: /^144p/ }).click();
+  // The first of its height is the preferred codec, H.264.
+  await menu(page).getByRole("button", { name: /^144p/ }).first().click();
   await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
   const saved = (await menu(page).locator(".vd-path").first().textContent())?.trim() ?? "";
   // yt-dlp writes where Chrome decided: its download folder (in these tests Chrome gives the file a
@@ -925,6 +960,36 @@ test("4 · YouTube through the native component, saved where Chrome saves (VD_E2
   expect(saved).toMatch(/\.mp4$/);
   const info = probe(saved);
   expect(info).toMatchObject({ height: 144, video: "h264", audio: "aac" });
+  rmSync(saved, { force: true });
+});
+
+test("4b · YouTube's formats: the other codecs folded, the sound in sight and saved on its own (VD_E2E_ONLINE=1)", async ({ page, downloads }) => {
+  test.skip(process.env.VD_E2E_ONLINE !== "1", "needs internet");
+  test.setTimeout(240_000);
+  await page.goto("https://www.youtube.com/watch?v=jNQXAC9IVRw");
+  for (const label of [/Accept all/i, /Aceptar todo/i]) {
+    const consent = page.getByRole("button", { name: label });
+    if (await consent.count()) {
+      await consent.first().click();
+      break;
+    }
+  }
+  await hub(page).first().waitFor({ state: "visible", timeout: 30_000 });
+  await openDownload(page);
+  await expect(menu(page).getByText(/native component/i)).toBeVisible({ timeout: 60_000 });
+  const others = menu(page).locator(".vd-more");
+  await expect(others.locator("summary")).toBeVisible();
+  await expect(others.getByRole("button").first()).toBeHidden();
+  await others.locator("summary").click();
+  await expect(others.getByRole("button").first()).toBeVisible();
+  const since = Date.now() - 1000;
+  await menu(page).getByRole("button", { name: /^AAC/ }).first().click();
+  await expect(menu(page).getByText("Download finished")).toBeVisible({ timeout: 120_000 });
+  const saved = (await menu(page).locator(".vd-path").first().textContent())?.trim() ?? "";
+  expect(saved.startsWith(downloads)).toBe(true);
+  expect(probe(saved)).toMatchObject({ audio: "aac" });
+  expect(probe(saved).video).toBeUndefined();
+  expect(Date.now()).toBeGreaterThan(since);
   rmSync(saved, { force: true });
 });
 

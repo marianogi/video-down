@@ -11,6 +11,8 @@
   "chooseQuality": { "message": "Elige la resolución" },
   "originalFile": { "message": "Fichero original" },
   "fileN": { "message": "Fichero $1" },
+  "audioOnly": { "message": "Solo audio" },
+  "moreFormats": { "message": "Más formatos de vídeo ($COUNT$)", "placeholders": { "count": { "content": "$1" } } },
   "bestQuality": { "message": "Mejor calidad" },
   "noVariants": { "message": "No se ha encontrado ninguna resolución descargable." },
   "retry": { "message": "Reintentar" },

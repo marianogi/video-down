@@ -46,6 +46,24 @@ writeFileSync(join(out, "hls", "master.m3u8"), [
   "",
 ].join("\n"));
 
+// 2o. The same video with its sound also offered as a separate rendition
+{
+  const dir = join(out, "hls", "sound");
+  mkdirSync(dir, { recursive: true });
+  run(["-f", "lavfi", "-i", `sine=frequency=440:sample_rate=48000:duration=${SECONDS}`, "-c:a", "aac", "-b:a", "96k",
+    "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod", "-hls_segment_filename", "seg%03d.ts", "index.m3u8"], dir);
+}
+writeFileSync(join(out, "hls", "master-sound.m3u8"), [
+  "#EXTM3U",
+  "#EXT-X-VERSION:3",
+  '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-96000",LANGUAGE="en",NAME="English",DEFAULT=YES,URI="sound/index.m3u8"',
+  '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS="avc1.64001e,mp4a.40.2",AUDIO="audio-96000"',
+  "v360/index.m3u8",
+  '#EXT-X-STREAM-INF:BANDWIDTH=2200000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio-96000"',
+  "v720/index.m3u8",
+  "",
+].join("\n"));
+
 // 2a. The same master, written the way Unified Streaming does: the audio rendition is declared
 //     WITHOUT a URI (RFC 8216 allows it: the audio is muxed in every variant). Media Bridge's
 //     parser crashed on it and only the playing variant was offered (0.2.0, Hotmart courses).
@@ -183,7 +201,7 @@ ${join(dir, "enc.key")}
   writeFileSync(join(out, "dash", "widevine.mpd"), mpd);
 }
 
-for (const f of ["clip-360.mp4", "hls/master.m3u8", "hls/master-muxed-audio.m3u8", "live/seg014.ts", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
+for (const f of ["clip-360.mp4", "hls/master.m3u8", "hls/master-sound.m3u8", "hls/sound/index.m3u8", "hls/master-muxed-audio.m3u8", "live/seg014.ts", "uni/clip.m3u8", "uni/clip-audio_eng=96000-video_eng=600000.m3u8", "hls-aes/index.m3u8", "hls-aes-noiv/index.m3u8",
   "hls-aes-zeroiv/index.m3u8", "hls-byterange/index.m3u8", "hls-garbage/index.m3u8", "dash/manifest.mpd", "dash/widevine.mpd"]) {
   if (!existsSync(join(out, f))) throw new Error(`missing ${f}`);
 }
